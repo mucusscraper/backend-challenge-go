@@ -1,0 +1,8 @@
+.env
+/bin/
+*.test
+*.out
+coverage.*
+
+# Project narrative (local document, not versioned)
+PROJECT_STORY.pdf

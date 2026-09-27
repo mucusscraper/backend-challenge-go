@@ -1,0 +1,142 @@
+# Local environment: PostgreSQL, Keycloak (OIDC IdP), LocalStack (SQS),
+# a one-shot migration job and THREE independent service instances
+# (app1/app2/app3), each with its own process, memory and connection pool.
+#
+#   docker compose up --build
+#
+# Host ports: app1 8081, app2 8082, app3 8083, Keycloak 8080,
+# LocalStack 4566, PostgreSQL 55432.
+name: wagering
+
+x-app: &app
+  build: .
+  image: wagering-wallet-service:local
+  restart: unless-stopped
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    localstack:
+      condition: service_healthy
+    keycloak:
+      condition: service_healthy
+  environment: &app-env
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    HTTP_ADDR: ":8080"
+    DATABASE_URL: postgres://wallet_app:${APP_DB_PASSWORD:-wallet_app}@postgres:5432/${POSTGRES_DB:-wagering}?sslmode=disable
+    DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-20}
+    AWS_REGION: ${AWS_REGION:-us-east-1}
+    AWS_ENDPOINT_URL: http://localstack:4566
+    AWS_ACCESS_KEY_ID: ${SERVICE_AWS_ACCESS_KEY_ID:-wallet-service}
+    AWS_SECRET_ACCESS_KEY: ${SERVICE_AWS_SECRET_ACCESS_KEY:-wallet-service-local-secret}
+    SQS_INBOUND_QUEUE: wager-transactions.fifo
+    SQS_INBOUND_DLQ: wager-transactions-dlq.fifo
+    SQS_EVENTS_QUEUE: wallet-events.fifo
+    SQS_ALLOWED_PROVIDERS: provider-a,provider-b
+    OIDC_ISSUER: http://localhost:8080/realms/wagering
+    OIDC_JWKS_URL: http://keycloak:8080/realms/wagering/protocol/openid-connect/certs
+    OIDC_AUDIENCE: wagering-api
+    PENDING_MAX_ATTEMPTS: ${PENDING_MAX_ATTEMPTS:-10}
+    PENDING_TTL: ${PENDING_TTL:-10m}
+    SHUTDOWN_TIMEOUT: 25s
+  stop_grace_period: 30s
+  healthcheck:
+    test: ["CMD", "/app/wallet-service", "healthcheck"]
+    interval: 5s
+    timeout: 4s
+    retries: 20
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wagering}
+      POSTGRES_USER: ${POSTGRES_USER:-wagering_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wagering_owner}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-wallet_app}
+    command: ["postgres", "-c", "max_connections=300"]
+    ports:
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
+    volumes:
+      - ./deploy/postgres:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Public issuer (what clients on the host use); the services reach the
+      # JWKS through the internal hostname "keycloak".
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./deploy/keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  localstack:
+    image: localstack/localstack:4.4
+    environment:
+      SERVICES: sqs
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      SQS_ENDPOINT_STRATEGY: path
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./deploy/localstack/init-sqs.sh:/etc/localstack/init/ready.d/init-sqs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs get-queue-url --queue-name wallet-events.fifo >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  migrate:
+    image: wagering-wallet-service:local
+    build: .
+    entrypoint: ["/app/migrate", "up"]
+    environment:
+      MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:-wagering_owner}:${POSTGRES_PASSWORD:-wagering_owner}@postgres:5432/${POSTGRES_DB:-wagering}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  app1:
+    <<: *app
+    environment:
+      <<: *app-env
+      INSTANCE_ID: app1
+    ports:
+      - "8081:8080"
+
+  app2:
+    <<: *app
+    environment:
+      <<: *app-env
+      INSTANCE_ID: app2
+    ports:
+      - "8082:8080"
+
+  app3:
+    <<: *app
+    environment:
+      <<: *app-env
+      INSTANCE_ID: app3
+    ports:
+      - "8083:8080"
+
+volumes:
+  pgdata:
