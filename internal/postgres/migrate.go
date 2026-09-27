@@ -11,15 +11,15 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/migrations"
 )
 
-// Migrator applies and reverts the versioned migrations embedded in the
-// binary (migrations/*.sql, goose format).
+// Migrator aplica e reverte as migrações versionadas embutidas no binário
+// (migrations/*.sql, formato goose).
 type Migrator struct {
 	db       *sql.DB
 	provider *goose.Provider
 }
 
-// NewMigrator opens a dedicated connection with the migration DSN (owner
-// role, not the restricted runtime role).
+// NewMigrator abre uma conexão dedicada com o DSN de migração (role owner,
+// não o role restrito de runtime).
 func NewMigrator(dsn string) (*Migrator, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -33,25 +33,25 @@ func NewMigrator(dsn string) (*Migrator, error) {
 	return &Migrator{db: db, provider: p}, nil
 }
 
-// Up applies every pending migration.
+// Up aplica todas as migrações pendentes.
 func (m *Migrator) Up(ctx context.Context) error {
 	_, err := m.provider.Up(ctx)
 	return err
 }
 
-// Down reverts the most recent migration.
+// Down reverte a migração mais recente.
 func (m *Migrator) Down(ctx context.Context) error {
 	_, err := m.provider.Down(ctx)
 	return err
 }
 
-// DownTo reverts migrations down to (and excluding) version; 0 reverts all.
+// DownTo reverte migrações até (exclusive) a versão; 0 reverte todas.
 func (m *Migrator) DownTo(ctx context.Context, version int64) error {
 	_, err := m.provider.DownTo(ctx, version)
 	return err
 }
 
-// Status describes each migration and whether it is applied.
+// Status descreve cada migração e se ela está aplicada.
 func (m *Migrator) Status(ctx context.Context) ([]string, error) {
 	st, err := m.provider.Status(ctx)
 	if err != nil {
@@ -64,13 +64,13 @@ func (m *Migrator) Status(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-// Version returns the current schema version.
+// Version retorna a versão atual do schema.
 func (m *Migrator) Version(ctx context.Context) (int64, error) {
 	return m.provider.GetDBVersion(ctx)
 }
 
-// Ping checks connectivity.
+// Ping verifica a conectividade.
 func (m *Migrator) Ping(ctx context.Context) error { return m.db.PingContext(ctx) }
 
-// Close releases the connection.
+// Close libera a conexão.
 func (m *Migrator) Close() error { return m.db.Close() }

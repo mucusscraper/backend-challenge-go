@@ -1,12 +1,12 @@
--- Inbox (consumer-side deduplication) and transactional outbox.
+-- Inbox (deduplicação no lado do consumer) e outbox transacional.
 
 -- +goose Up
 
 CREATE TABLE inbox_messages (
     consumer_name  TEXT        NOT NULL,
     message_id     TEXT        NOT NULL,
-    -- SHA-256 of the canonical message content; a redelivery with the same
-    -- messageId but a different hash is refused.
+    -- SHA-256 do conteúdo canônico da mensagem; uma reentrega com o mesmo
+    -- messageId mas hash diferente é recusada.
     payload_hash   TEXT        NOT NULL,
     transaction_id UUID        REFERENCES wager_transactions (id),
     outcome        TEXT        NOT NULL,
@@ -16,20 +16,20 @@ CREATE TABLE inbox_messages (
 );
 
 CREATE TABLE outbox_events (
-    -- The eventId is generated once and is stable across republications.
+    -- O eventId é gerado uma vez e é estável entre republicações.
     id              UUID        PRIMARY KEY,
     aggregate_type  TEXT        NOT NULL,
     aggregate_id    TEXT        NOT NULL,
     event_type      TEXT        NOT NULL,
     event_version   INTEGER     NOT NULL CHECK (event_version >= 1),
-    -- Full envelope snapshot, stored as JSON (exact text preserved).
+    -- Snapshot completo do envelope, armazenado como JSON (texto exato preservado).
     payload         JSON        NOT NULL,
     occurred_at     TIMESTAMPTZ NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     attempts        INTEGER     NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    -- Lease: a publisher owns a row until locked_until; after that any other
-    -- instance may claim it again (recovery of abandoned work).
+    -- Lease: um publisher detém uma linha até locked_until; depois disso qualquer
+    -- outra instância pode reivindicá-la novamente (recuperação de trabalho abandonado).
     locked_by       TEXT,
     locked_until    TIMESTAMPTZ,
     published_at    TIMESTAMPTZ,
@@ -40,8 +40,8 @@ CREATE INDEX outbox_events_due ON outbox_events (next_attempt_at) WHERE publishe
 CREATE INDEX outbox_events_unpublished_occurred ON outbox_events (occurred_at) WHERE published_at IS NULL;
 
 -- +goose StatementBegin
--- The event snapshot is immutable; only delivery bookkeeping may change and
--- a published event cannot be "unpublished".
+-- O snapshot do evento é imutável; apenas o bookkeeping de entrega pode mudar e
+-- um evento publicado não pode ser "despublicado".
 CREATE FUNCTION guard_outbox_row() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_OP = 'DELETE' THEN
@@ -65,7 +65,7 @@ CREATE TRIGGER outbox_events_guard
     FOR EACH ROW EXECUTE FUNCTION guard_outbox_row();
 
 -- +goose StatementBegin
--- Inbox rows are immutable records of completed handling.
+-- Linhas da inbox são registros imutáveis de processamento concluído.
 CREATE FUNCTION forbid_inbox_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'inbox_messages is append-only (% not allowed)', TG_OP
@@ -78,9 +78,9 @@ CREATE TRIGGER inbox_messages_no_update_delete
     BEFORE UPDATE OR DELETE ON inbox_messages
     FOR EACH ROW EXECUTE FUNCTION forbid_inbox_mutation();
 
--- Least privilege for the runtime role (created by deploy/postgres/init).
--- The application can never UPDATE/DELETE the ledger or inbox even if a bug
--- tried to, in addition to the triggers above.
+-- Privilégio mínimo para o role de runtime (criado por deploy/postgres/init).
+-- A aplicação nunca pode UPDATE/DELETE no ledger ou inbox mesmo que um bug
+-- tente, além dos triggers acima.
 -- +goose StatementBegin
 DO $$
 BEGIN

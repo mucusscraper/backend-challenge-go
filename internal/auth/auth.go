@@ -1,18 +1,18 @@
-// Package auth validates OAuth 2.0 access tokens issued by the external
-// OIDC provider (Keycloak) and derives the caller's Principal.
+// Package auth valida tokens de acesso OAuth 2.0 emitidos pelo provedor OIDC
+// externo (Keycloak) e deriva o Principal do chamador.
 //
-// Validation: RS256 signature against the issuer's JWKS (keys cached and
-// refreshed on rotation by go-oidc), "iss" equal to the configured issuer,
-// "aud" containing the API audience, "exp" checked, and "typ" equal
-// to "Bearer" so ID tokens or refresh tokens cannot be replayed as access
-// tokens.
+// Validação: assinatura RS256 contra o JWKS do issuer (chaves cacheadas e
+// atualizadas na rotação pelo go-oidc), "iss" igual ao issuer configurado,
+// "aud" contendo a audience da API, "exp" verificado, e "typ" igual a
+// "Bearer" para que tokens de ID ou de refresh não possam ser reaproveitados
+// como tokens de acesso.
 //
-// Authorization model (realm roles in realm_access.roles):
-//   - "wagering-provider": a game provider. The provider identity comes
-//     exclusively from the provider_id claim (a hard-coded claim mapper on
-//     the provider's Keycloak client); request bodies can never widen it.
-//   - "wallet-operator": the internal service that opens wallets, reads them,
-//     their ledger, reconciles, and may read any transaction.
+// Modelo de autorização (papéis do realm em realm_access.roles):
+//   - "wagering-provider": um provedor de jogo. A identidade do provedor vem
+//     exclusivamente do claim provider_id (um mapper de claim hard-coded no
+//     cliente Keycloak do provedor); o corpo da requisição nunca pode ampliá-la.
+//   - "wallet-operator": o serviço interno que abre carteiras, as lê,
+//     lê o ledger, reconcilia e pode ler qualquer transação.
 package auth
 
 import (
@@ -27,19 +27,19 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/config"
 )
 
-// Realm roles understood by the API.
+// Papéis do realm reconhecidos pela API.
 const (
 	RoleProvider       = "wagering-provider"
 	RoleWalletOperator = "wallet-operator"
 )
 
-// Errors returned by Authenticate.
+// Erros retornados por Authenticate.
 var (
 	ErrMissingToken = errors.New("missing bearer token")
 	ErrInvalidToken = errors.New("invalid or expired token")
 )
 
-// Principal is the authenticated caller.
+// Principal é o chamador autenticado.
 type Principal struct {
 	Subject    string
 	ClientID   string
@@ -47,29 +47,29 @@ type Principal struct {
 	Roles      []string
 }
 
-// HasRole reports whether the principal has a realm role.
+// HasRole informa se o principal possui um papel do realm.
 func (p Principal) HasRole(role string) bool { return slices.Contains(p.Roles, role) }
 
-// IsProvider reports whether the caller acts as a game provider. Both the
-// role and a non-empty provider_id claim are required.
+// IsProvider informa se o chamador age como provedor de jogo. São necessários
+// tanto o papel quanto um claim provider_id não vazio.
 func (p Principal) IsProvider() bool { return p.HasRole(RoleProvider) && p.ProviderID != "" }
 
-// IsWalletOperator reports whether the caller is the internal service.
+// IsWalletOperator informa se o chamador é o serviço interno.
 func (p Principal) IsWalletOperator() bool { return p.HasRole(RoleWalletOperator) }
 
-// CanAccessProvider reports whether the caller may see data of providerID.
+// CanAccessProvider informa se o chamador pode ver dados do providerID.
 func (p Principal) CanAccessProvider(providerID string) bool {
 	return p.IsWalletOperator() || (p.IsProvider() && p.ProviderID == providerID)
 }
 
-// Verifier validates bearer tokens.
+// Verifier valida bearer tokens.
 type Verifier struct {
 	verifier      *oidc.IDTokenVerifier
 	providerClaim string
 }
 
-// NewVerifier builds a verifier. The JWKS URL may point to an internal
-// hostname while the issuer is the public one (as in docker compose).
+// NewVerifier constrói um verifier. A URL do JWKS pode apontar para um hostname
+// interno enquanto o issuer é o público (como no docker compose).
 func NewVerifier(cfg config.OIDCConfig) *Verifier {
 	keySet := oidc.NewRemoteKeySet(context.Background(), cfg.JWKSURL)
 	v := oidc.NewVerifier(cfg.Issuer, keySet, &oidc.Config{
@@ -79,7 +79,7 @@ func NewVerifier(cfg config.OIDCConfig) *Verifier {
 	return &Verifier{verifier: v, providerClaim: cfg.ProviderClaim}
 }
 
-// claims are the fields read from a Keycloak access token.
+// claims são os campos lidos de um access token do Keycloak.
 type claims struct {
 	Type        string `json:"typ"`
 	AZP         string `json:"azp"`
@@ -88,8 +88,8 @@ type claims struct {
 	} `json:"realm_access"`
 }
 
-// Authenticate validates the Authorization header value and returns the
-// principal. Errors never contain the token itself.
+// Authenticate valida o valor do header Authorization e retorna o principal.
+// Os erros nunca contêm o próprio token.
 func (v *Verifier) Authenticate(ctx context.Context, authorization string) (Principal, error) {
 	raw, ok := strings.CutPrefix(authorization, "Bearer ")
 	if !ok || strings.TrimSpace(raw) == "" {
@@ -119,7 +119,7 @@ func (v *Verifier) Authenticate(ctx context.Context, authorization string) (Prin
 	}, nil
 }
 
-// redact keeps only the error category from go-oidc messages.
+// redact mantém apenas a categoria do erro das mensagens do go-oidc.
 func redact(err error) string {
 	msg := err.Error()
 	switch {
@@ -138,12 +138,12 @@ func redact(err error) string {
 
 type principalKey struct{}
 
-// WithPrincipal stores the principal in the context.
+// WithPrincipal armazena o principal no contexto.
 func WithPrincipal(ctx context.Context, p Principal) context.Context {
 	return context.WithValue(ctx, principalKey{}, p)
 }
 
-// FromContext returns the principal stored by the middleware.
+// FromContext retorna o principal armazenado pelo middleware.
 func FromContext(ctx context.Context) (Principal, bool) {
 	p, ok := ctx.Value(principalKey{}).(Principal)
 	return p, ok

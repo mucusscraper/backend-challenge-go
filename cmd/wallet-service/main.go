@@ -1,9 +1,9 @@
-// Command wallet-service runs the HTTP API, the SQS consumer, the outbox
-// relay and the pending-reference worker in one process. Any number of
-// instances can run against the same PostgreSQL and SQS.
+// Command wallet-service executa a API HTTP, o consumer SQS, o outbox
+// relay e o worker de referências pendentes em um único processo. Qualquer número de
+// instâncias pode rodar contra o mesmo PostgreSQL e SQS.
 //
-// "wallet-service healthcheck" probes /health/ready of a local instance; it
-// is used by the container health check (the image has no shell or curl).
+// "wallet-service healthcheck" sonda /health/ready de uma instância local; é
+// usado pelo health check do container (a imagem não tem shell nem curl).
 package main
 
 import (
@@ -28,8 +28,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	// fx.New builds the graph; Run starts it, blocks until SIGINT/SIGTERM
-	// and then runs the OnStop hooks within cfg.ShutdownTimeout.
+	// fx.New constrói o grafo; Run o inicia, bloqueia até SIGINT/SIGTERM
+	// e então executa os hooks OnStop dentro de cfg.ShutdownTimeout.
 	fx.New(bootstrap.Options(cfg)).Run()
 }
 

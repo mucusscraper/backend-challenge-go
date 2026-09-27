@@ -1,13 +1,13 @@
 //go:build e2e
 
-// End-to-end tests against THREE independent service processes (app1, app2,
-// app3 of docker compose), each with its own memory and connection pool,
-// sharing only PostgreSQL, SQS and Keycloak.
+// Testes end-to-end contra TRÊS processos independentes do serviço (app1, app2,
+// app3 do docker compose), cada um com sua própria memória e pool de conexões,
+// compartilhando apenas PostgreSQL, SQS e Keycloak.
 //
 //	docker compose up -d --build
 //	go test -race -tags e2e -count=1 ./test/e2e/...
 //
-// Failure simulation (kills app1 with SIGKILL during load, then restarts it):
+// Simulação de falha (mata o app1 com SIGKILL durante a carga, depois reinicia):
 //
 //	E2E_CHAOS=1 go test -tags e2e -count=1 -run Chaos ./test/e2e/...
 package e2e
@@ -154,8 +154,8 @@ func reconcile(t *testing.T, e env, walletID string) {
 	}
 }
 
-// TestE2ESameBetFiftyTimesAcrossInstances: 50 parallel deliveries spread
-// over three processes -> a single debit.
+// TestE2ESameBetFiftyTimesAcrossInstances: 50 entregas paralelas distribuídas
+// entre três processos -> um único débito.
 func TestE2ESameBetFiftyTimesAcrossInstances(t *testing.T) {
 	e := setup(t)
 	w := openWallet(t, e, "100.00")
@@ -189,8 +189,8 @@ func TestE2ESameBetFiftyTimesAcrossInstances(t *testing.T) {
 	reconcile(t, e, w.id)
 }
 
-// TestE2ETwoBetsRaceAcrossInstances: the mandatory 100.00 / 2x80.00 race,
-// each bet sent to a different process.
+// TestE2ETwoBetsRaceAcrossInstances: a corrida obrigatória 100.00 / 2x80.00,
+// cada aposta enviada para um processo diferente.
 func TestE2ETwoBetsRaceAcrossInstances(t *testing.T) {
 	e := setup(t)
 	for round := 0; round < 10; round++ {
@@ -219,7 +219,7 @@ func TestE2ETwoBetsRaceAcrossInstances(t *testing.T) {
 		if codes[200] != 1 || codes[422] != 1 {
 			t.Fatalf("round %d statuses %v", round, codes)
 		}
-		// Resends through the third instance change nothing.
+		// Reenvios pela terceira instância não alteram nada.
 		for i, ext := range exts {
 			r := mustDo(t, "POST", bases[2]+"/wagering/transactions", e.pa, body(w, "BET", "80.00", ext, ""), "Idempotency-Key", "provider-a:"+ext)
 			if r.status != results[i].status || r.body["idempotentReplay"] != true {
@@ -233,8 +233,8 @@ func TestE2ETwoBetsRaceAcrossInstances(t *testing.T) {
 	}
 }
 
-// TestE2EDistinctWalletsInParallel: many wallets, many operations, three
-// processes; all complete and stay consistent.
+// TestE2EDistinctWalletsInParallel: muitas carteiras, muitas operações, três
+// processos; todas concluem e permanecem consistentes.
 func TestE2EDistinctWalletsInParallel(t *testing.T) {
 	e := setup(t)
 	wallets := make([]wallet, 20)
@@ -264,8 +264,8 @@ func TestE2EDistinctWalletsInParallel(t *testing.T) {
 	}
 }
 
-// TestE2EReversalBeforeReferenceAcrossInstances: REFUND sent to app1
-// before its BET (sent to app2); any instance resolves it.
+// TestE2EReversalBeforeReferenceAcrossInstances: REFUND enviado para o app1
+// antes do seu BET (enviado para o app2); qualquer instância o resolve.
 func TestE2EReversalBeforeReferenceAcrossInstances(t *testing.T) {
 	e := setup(t)
 	w := openWallet(t, e, "100.00")
@@ -306,10 +306,10 @@ func queueURL(t *testing.T, c *sqs.Client, name string) string {
 	return aws.ToString(out.QueueUrl)
 }
 
-// TestE2EHTTPAndSQSSameOperation: the same operation through the real
-// inbound queue (consumed by the three instances) and HTTP -> one debit.
-// The message is also sent several times with different broker dedup ids
-// so that the application inbox/idempotency is what deduplicates.
+// TestE2EHTTPAndSQSSameOperation: a mesma operação pela fila de entrada real
+// (consumida pelas três instâncias) e HTTP -> um débito.
+// A mensagem é enviada várias vezes com diferentes ids de deduplicação do broker
+// para que a inbox/idempotência da aplicação seja quem deduplica.
 func TestE2EHTTPAndSQSSameOperation(t *testing.T) {
 	e := setup(t)
 	c := sqsClient(t)
@@ -322,10 +322,10 @@ func TestE2EHTTPAndSQSSameOperation(t *testing.T) {
 	raw := tu.RawReq("provider-a", wal, domain.KindBet, "35.00", ext, "")
 	msgID := "e2e-msg-" + uuid.NewString()
 	for i := 0; i < 3; i++ {
-		// Same messageId (inbox dedup), different broker dedup id.
+		// Mesmo messageId (dedup pela inbox), diferente id de dedup do broker.
 		tu.SendRaw(t, c, inbound, w.id, fmt.Sprintf("%s-%d", msgID, i), tu.InboundBody(msgID, raw))
 	}
-	// Another messageId for the same operation (idempotency-key dedup).
+	// Outro messageId para a mesma operação (dedup pela chave de idempotência).
 	tu.SendInbound(t, c, inbound, msgID+"-other", raw)
 	r := mustDo(t, "POST", bases[1]+"/wagering/transactions", e.pa, body(w, "BET", "35.00", ext, ""), "Idempotency-Key", "provider-a:"+ext)
 	if r.status != 200 {
@@ -343,7 +343,7 @@ func TestE2EHTTPAndSQSSameOperation(t *testing.T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	time.Sleep(2 * time.Second) // let the remaining duplicates be consumed
+	time.Sleep(2 * time.Second) // aguarda os duplicatas restantes serem consumidos
 	bal, net, debits, _ := stats(t, e, w.id)
 	if bal != 6500 || net != 6500 || debits != 1 {
 		t.Fatalf("balance=%d net=%d debits=%d", bal, net, debits)
@@ -351,8 +351,8 @@ func TestE2EHTTPAndSQSSameOperation(t *testing.T) {
 	reconcile(t, e, w.id)
 }
 
-// TestE2EOutboxPublishes: events of committed operations are published by
-// one of the instances (published_at set) with stable eventIds.
+// TestE2EOutboxPublishes: eventos de operações confirmadas são publicados por
+// uma das instâncias (published_at definido) com eventIds estáveis.
 func TestE2EOutboxPublishes(t *testing.T) {
 	e := setup(t)
 	w := openWallet(t, e, "50.00")
@@ -375,9 +375,9 @@ func TestE2EOutboxPublishes(t *testing.T) {
 	}
 }
 
-// TestE2EChaosKillInstance kills app1 (SIGKILL) during a burst of
-// operations, restarts it, and verifies that every operation was applied
-// exactly once. Clients retry on another instance with the same key.
+// TestE2EChaosKillInstance mata o app1 (SIGKILL) durante uma rajada de
+// operações, reinicia-o e verifica que cada operação foi aplicada
+// exatamente uma vez. Clientes reenviam para outra instância com a mesma chave.
 func TestE2EChaosKillInstance(t *testing.T) {
 	if os.Getenv("E2E_CHAOS") == "" {
 		t.Skip("set E2E_CHAOS=1 to run (uses docker compose kill/start)")

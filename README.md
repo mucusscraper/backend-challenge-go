@@ -1,13 +1,13 @@
-# Wager Wallet Service — distributed bet processing in Go
+# Wager Wallet Service — processamento distribuído de apostas em Go
 
-A Go service (Uber Fx, pgx, PostgreSQL, SQS/LocalStack, Keycloak) that moves
-player wallets for game-provider operations (`BET`, `WIN`, `LOSS`, `REFUND`,
-`ROLLBACK`) through an **HTTP API** and an **SQS consumer**. Both entry points share the same
-use case and the same guarantees. The financial result stays correct with
-several instances running and with crashes between processing steps.
+Um serviço Go (Uber Fx, pgx, PostgreSQL, SQS/LocalStack, Keycloak) que movimenta
+carteiras de jogadores para operações de provedores de jogos (`BET`, `WIN`, `LOSS`, `REFUND`,
+`ROLLBACK`) por meio de uma **API HTTP** e um **consumidor SQS**. Ambos os pontos de entrada
+compartilham o mesmo caso de uso e as mesmas garantias. O resultado financeiro permanece
+correto com várias instâncias em execução e com falhas entre as etapas de processamento.
 
-- Challenge statement: [docs/CHALLENGE.md](docs/CHALLENGE.md)
-- Design decisions, guarantees, limitations: [ARCHITECTURE.md](ARCHITECTURE.md)
+- Enunciado do desafio: [docs/CHALLENGE.md](docs/CHALLENGE.md)
+- Decisões de design, garantias, limitações: [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ```
              ┌──────────┐  client_credentials   ┌──────────┐
@@ -16,142 +16,140 @@ several instances running and with crashes between processing steps.
                   │                              └────┬─────┘
    HTTP (Bearer)  ▼                                   │ HTTP
  ┌──────────────────────────────────────────────────────────────┐
- │  app1 / app2 / app3  (independent processes, same binary)    │
+ │  app1 / app2 / app3  (processos independentes, mesmo binário)│
  │  HTTP API ─┐                                                 │
  │  SQS consumer ─┼─▶ WageringService / WalletService ─▶ PostgreSQL │
- │  pending-reference worker ┘      (one SQL tx per operation:  │
+ │  pending-reference worker ┘      (uma TX SQL por operação:   │
  │  outbox relay ──────────▶ SQS     wallet+tx+ledger+inbox+outbox)
  └──────────────────────────────────────────────────────────────┘
    wager-transactions.fifo ──▶ consumer      (DLQ: wager-transactions-dlq.fifo)
    outbox relay ──▶ wallet-events.fifo
 ```
 
-## Contents
+## Índice
 
-1. [Prerequisites](#1-prerequisites)
-2. [Quick start](#2-quick-start)
-3. [Environment variables](#3-environment-variables)
-4. [Queues](#4-queues)
-5. [Migrations](#5-migrations)
-6. [Running the application](#6-running-the-application)
-7. [Authentication and test identities](#7-authentication-and-test-identities)
-8. [HTTP API](#8-http-api)
-9. [Sending operations through SQS](#9-sending-operations-through-sqs)
-10. [Tests](#10-tests)
-11. [Observability](#11-observability)
-12. [Project layout](#12-project-layout)
+1. [Pré-requisitos](#1-pré-requisitos)
+2. [Início rápido](#2-início-rápido)
+3. [Variáveis de ambiente](#3-variáveis-de-ambiente)
+4. [Filas](#4-filas)
+5. [Migrações](#5-migrações)
+6. [Executando a aplicação](#6-executando-a-aplicação)
+7. [Autenticação e identidades de teste](#7-autenticação-e-identidades-de-teste)
+8. [API HTTP](#8-api-http)
+9. [Enviando operações pelo SQS](#9-enviando-operações-pelo-sqs)
+10. [Testes](#10-testes)
+11. [Observabilidade](#11-observabilidade)
+12. [Estrutura do projeto](#12-estrutura-do-projeto)
 
-## 1. Prerequisites
+## 1. Pré-requisitos
 
-| Tool | Version used | Needed for |
+| Ferramenta | Versão utilizada | Necessária para |
 | --- | --- | --- |
-| Docker + Docker Compose v2 | Docker 29, Compose 5 | the whole environment |
-| Go | **1.25** (see `go.mod` and `Dockerfile`) | running tests / tools locally |
-| `curl`, `jq` | any | examples below |
+| Docker + Docker Compose v2 | Docker 29, Compose 5 | todo o ambiente |
+| Go | **1.25** (veja `go.mod` e `Dockerfile`) | executar testes / ferramentas localmente |
+| `curl`, `jq` | qualquer | exemplos abaixo |
 
-Host ports used: `8080` (Keycloak), `8081–8083` (service instances), `4566`
-(LocalStack), `55432` (PostgreSQL; not 5432, to avoid clashing with a local
-PostgreSQL).
+Portas do host utilizadas: `8080` (Keycloak), `8081–8083` (instâncias do serviço), `4566`
+(LocalStack), `55432` (PostgreSQL; não 5432, para evitar conflito com um PostgreSQL local).
 
-## 2. Quick start
+## 2. Início rápido
 
 ```sh
-docker compose up --build        # add -d to detach
+docker compose up --build        # adicione -d para desanexar
 ```
 
-This starts, in order:
+Isso inicia, na ordem:
 
-1. `postgres` (creates the restricted runtime role `wallet_app`),
-2. `keycloak` (imports the `wagering` realm with test clients),
-3. `localstack` (creates the SQS queues, redrive policy and queue policies),
-4. `migrate`, a one-shot job that applies the migrations and exits with 0,
-5. `app1`, `app2`, `app3`, three independent instances of the service.
+1. `postgres` (cria o papel restrito de runtime `wallet_app`),
+2. `keycloak` (importa o realm `wagering` com clientes de teste),
+3. `localstack` (cria as filas SQS, política de redrive e permissões),
+4. `migrate`, uma tarefa única que aplica as migrações e encerra com 0,
+5. `app1`, `app2`, `app3`, três instâncias independentes do serviço.
 
-When every instance is `healthy` (`docker compose ps`):
+Quando todas as instâncias estiverem `healthy` (`docker compose ps`):
 
 ```sh
 curl -s localhost:8081/health/ready   # {"checks":{"postgres":"UP","sqs":"UP"},"status":"UP"}
 ```
 
-Stop with `docker compose down`, or `docker compose down -v` to also drop the database.
+Pare com `docker compose down`, ou `docker compose down -v` para também remover o banco de dados.
 
-## 3. Environment variables
+## 3. Variáveis de ambiente
 
-`docker-compose.yml` has a default for every variable. To override any of
-them, copy [.env.example](.env.example) to `.env`. The example contains local
-values only, no real secrets.
+`docker-compose.yml` possui um valor padrão para cada variável. Para sobrescrever qualquer uma
+delas, copie [.env.example](.env.example) para `.env`. O exemplo contém apenas valores locais,
+sem segredos reais.
 
-Main variables read by the service binary:
+Principais variáveis lidas pelo binário do serviço:
 
-| Variable | Default | Meaning |
+| Variável | Padrão | Significado |
 | --- | --- | --- |
-| `INSTANCE_ID` | hostname | instance name in logs and outbox leases |
-| `HTTP_ADDR` | `:8080` | listen address |
-| `DATABASE_URL` | — (required) | runtime DSN (`wallet_app` role) |
-| `DATABASE_LOCK_TIMEOUT` | `5s` | max wait for a wallet row lock |
-| `MIGRATION_DATABASE_URL` | — | owner DSN used by `migrate` |
-| `AWS_ENDPOINT_URL` | — | LocalStack endpoint (`http://localstack:4566`) |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | — | broker credentials of the service |
-| `SQS_INBOUND_QUEUE` / `SQS_INBOUND_DLQ` / `SQS_EVENTS_QUEUE` | `wager-transactions.fifo` / `wager-transactions-dlq.fifo` / `wallet-events.fifo` | queue names |
-| `SQS_VISIBILITY_TIMEOUT` / `SQS_HANDLER_TIMEOUT` | `30s` / `20s` | handler timeout must be lower than the visibility timeout |
-| `SQS_RETRY_BASE_DELAY` / `SQS_RETRY_MAX_DELAY` | `2s` / `60s` | backoff applied to transient failures |
-| `SQS_ALLOWED_PROVIDERS` | `provider-a,provider-b` | providers accepted from the queue |
-| `OIDC_ISSUER` | — (required) | expected `iss` (`http://localhost:8080/realms/wagering`) |
-| `OIDC_JWKS_URL` | issuer + `/protocol/openid-connect/certs` | where signing keys are fetched |
-| `OIDC_AUDIENCE` | `wagering-api` | expected `aud` |
-| `PENDING_MAX_ATTEMPTS` / `PENDING_TTL` | `10` / `10m` | budget of a pending reference |
-| `OUTBOX_LEASE` | `30s` | lease before abandoned outbox rows are reclaimed |
-| `SHUTDOWN_TIMEOUT` | `25s` | graceful shutdown budget |
+| `INSTANCE_ID` | hostname | nome da instância nos logs e leases do outbox |
+| `HTTP_ADDR` | `:8080` | endereço de escuta |
+| `DATABASE_URL` | — (obrigatório) | DSN de runtime (papel `wallet_app`) |
+| `DATABASE_LOCK_TIMEOUT` | `5s` | espera máxima por um lock de linha da carteira |
+| `MIGRATION_DATABASE_URL` | — | DSN do proprietário usado pelo `migrate` |
+| `AWS_ENDPOINT_URL` | — | endpoint do LocalStack (`http://localstack:4566`) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | — | credenciais do broker para o serviço |
+| `SQS_INBOUND_QUEUE` / `SQS_INBOUND_DLQ` / `SQS_EVENTS_QUEUE` | `wager-transactions.fifo` / `wager-transactions-dlq.fifo` / `wallet-events.fifo` | nomes das filas |
+| `SQS_VISIBILITY_TIMEOUT` / `SQS_HANDLER_TIMEOUT` | `30s` / `20s` | o timeout do handler deve ser menor que o de visibilidade |
+| `SQS_RETRY_BASE_DELAY` / `SQS_RETRY_MAX_DELAY` | `2s` / `60s` | backoff aplicado a falhas transitórias |
+| `SQS_ALLOWED_PROVIDERS` | `provider-a,provider-b` | provedores aceitos da fila |
+| `OIDC_ISSUER` | — (obrigatório) | `iss` esperado (`http://localhost:8080/realms/wagering`) |
+| `OIDC_JWKS_URL` | issuer + `/protocol/openid-connect/certs` | onde as chaves de assinatura são buscadas |
+| `OIDC_AUDIENCE` | `wagering-api` | `aud` esperado |
+| `PENDING_MAX_ATTEMPTS` / `PENDING_TTL` | `10` / `10m` | orçamento de uma referência pendente |
+| `OUTBOX_LEASE` | `30s` | lease antes que linhas abandonadas do outbox sejam recuperadas |
+| `SHUTDOWN_TIMEOUT` | `25s` | orçamento de encerramento gracioso |
 
-[.env.example](.env.example) lists all of them.
+[.env.example](.env.example) lista todas elas.
 
-## 4. Queues
+## 4. Filas
 
-The queues are created automatically by
-[deploy/localstack/init-sqs.sh](deploy/localstack/init-sqs.sh), a LocalStack
-"ready" hook:
+As filas são criadas automaticamente por
+[deploy/localstack/init-sqs.sh](deploy/localstack/init-sqs.sh), um hook de "ready" do LocalStack:
 
-| Queue | Type | Purpose |
+| Fila | Tipo | Propósito |
 | --- | --- | --- |
-| `wager-transactions.fifo` | FIFO, visibility 30s, **redrive to DLQ after 5 receives** | inbound operations |
-| `wager-transactions-dlq.fifo` | FIFO, 14-day retention | dead letters (redrive + permanent errors) |
-| `wallet-events.fifo` | FIFO | outbound integration events (outbox) |
+| `wager-transactions.fifo` | FIFO, visibilidade 30s, **redrive para DLQ após 5 recebimentos** | operações de entrada |
+| `wager-transactions-dlq.fifo` | FIFO, retenção de 14 dias | mensagens mortas (redrive + erros permanentes) |
+| `wallet-events.fifo` | FIFO | eventos de integração de saída (outbox) |
 
-To re-run the provisioning manually (the script is idempotent):
+Para re-executar o provisionamento manualmente (o script é idempotente):
 
 ```sh
 docker compose exec localstack /etc/localstack/init/ready.d/init-sqs.sh
 docker compose exec localstack awslocal sqs list-queues
 ```
 
-## 5. Migrations
+## 5. Migrações
 
-Migrations are versioned SQL files in [migrations/](migrations), in goose
-format with `Up` and `Down` sections. They are embedded in the binaries and
-run by `cmd/migrate` with the owner role.
+As migrações são arquivos SQL versionados em [migrations/](migrations), no
+formato goose com seções `Up` e `Down`. São embutidas nos binários e
+executadas pelo `cmd/migrate` com o papel de proprietário.
 
 ```sh
-# with docker compose (runs automatically on `up`):
-docker compose run --rm migrate                                         # apply all
+# com docker compose (executa automaticamente no `up`):
+docker compose run --rm migrate                                         # aplica todas
 docker compose run --rm --entrypoint /app/migrate migrate status
-docker compose run --rm --entrypoint /app/migrate migrate down          # revert the latest
-docker compose run --rm --entrypoint /app/migrate migrate down-to 0     # revert everything
+docker compose run --rm --entrypoint /app/migrate migrate down          # reverte a última
+docker compose run --rm --entrypoint /app/migrate migrate down-to 0     # reverte tudo
 
-# from the host (Go installed):
+# a partir do host (Go instalado):
 export MIGRATION_DATABASE_URL='postgres://wagering_owner:wagering_owner@localhost:55432/wagering?sslmode=disable'
 go run ./cmd/migrate up | down | down-to N | status
-# or: make migrate-up / make migrate-down / make migrate-status
+# ou: make migrate-up / make migrate-down / make migrate-status
 ```
 
-| Version | Content |
+| Versão | Conteúdo |
 | --- | --- |
-| 00001 | wallets, wager transactions, ledger, all constraints and protection triggers |
-| 00002 | inbox, outbox, their triggers, and grants for the runtime role |
+| 00001 | wallets, wager transactions, ledger, todas as constraints e triggers de proteção |
+| 00002 | inbox, outbox, seus triggers e permissões para o papel de runtime |
 
-## 6. Running the application
+## 6. Executando a aplicação
 
-Docker Compose already runs three instances. To run one instance from source
-against the Compose infrastructure:
+O Docker Compose já executa três instâncias. Para executar uma instância a partir do código-fonte
+contra a infraestrutura do Compose:
 
 ```sh
 docker compose up -d postgres keycloak localstack migrate
@@ -161,49 +159,49 @@ OIDC_ISSUER=http://localhost:8080/realms/wagering HTTP_ADDR=:8090 INSTANCE_ID=lo
 go run ./cmd/wallet-service
 ```
 
-`SIGTERM`/`SIGINT` trigger a graceful shutdown (see ARCHITECTURE.md §13).
+`SIGTERM`/`SIGINT` acionam um encerramento gracioso (veja ARCHITECTURE.md §13).
 
-## 7. Authentication and test identities
+## 7. Autenticação e identidades de teste
 
-Keycloak is provisioned from
+O Keycloak é provisionado a partir de
 [deploy/keycloak/realm-wagering.json](deploy/keycloak/realm-wagering.json)
-with confidential clients using the **client_credentials** grant:
+com clientes confidenciais usando o grant **client_credentials**:
 
-| Client ID | Secret | Role | `provider_id` claim | Use |
+| Client ID | Segredo | Papel | Claim `provider_id` | Uso |
 | --- | --- | --- | --- | --- |
-| `provider-a` | `provider-a-secret` | `wagering-provider` | `provider-a` | game provider A |
-| `provider-b` | `provider-b-secret` | `wagering-provider` | `provider-b` | game provider B |
-| `wallet-service` | `wallet-service-secret` | `wallet-operator` | — | internal service (wallet operations) |
-| `provider-a-shortlived` | `provider-a-shortlived-secret` | `wagering-provider` | `provider-a` | 2-second tokens (expiry tests) |
-| `no-role-client` | `no-role-client-secret` | — | — | authenticated but without permissions |
+| `provider-a` | `provider-a-secret` | `wagering-provider` | `provider-a` | provedor de jogo A |
+| `provider-b` | `provider-b-secret` | `wagering-provider` | `provider-b` | provedor de jogo B |
+| `wallet-service` | `wallet-service-secret` | `wallet-operator` | — | serviço interno (operações de carteira) |
+| `provider-a-shortlived` | `provider-a-shortlived-secret` | `wagering-provider` | `provider-a` | tokens de 2 segundos (testes de expiração) |
+| `no-role-client` | `no-role-client-secret` | — | — | autenticado mas sem permissões |
 
-Keycloak admin console: <http://localhost:8080> (`admin` / `admin`).
+Console de administração do Keycloak: <http://localhost:8080> (`admin` / `admin`).
 
 ```sh
 token() {
   curl -s -X POST http://localhost:8080/realms/wagering/protocol/openid-connect/token \
     -d grant_type=client_credentials -d client_id="$1" -d client_secret="$2" | jq -r .access_token
 }
-OP=$(token wallet-service wallet-service-secret)   # internal service
-PA=$(token provider-a provider-a-secret)           # provider A
-PB=$(token provider-b provider-b-secret)           # provider B
+OP=$(token wallet-service wallet-service-secret)   # serviço interno
+PA=$(token provider-a provider-a-secret)           # provedor A
+PB=$(token provider-b provider-b-secret)           # provedor B
 ```
 
-Permissions:
+Permissões:
 
 | Endpoint | `wallet-operator` | `wagering-provider` |
 | --- | --- | --- |
 | `POST /wallets`, `GET /wallets/{id}`, `GET /wallets/{id}/ledger`, `POST /wallets/{id}/reconciliation` | ✅ | ❌ 403 |
-| `POST /wagering/transactions` | ❌ 403 | ✅ only with `providerId` = own `provider_id` |
-| `GET /wagering/transactions/{id}` | ✅ any | ✅ own transactions only (others: 404) |
-| `GET /providers/{providerId}/wagering/transactions/{ext}` | ✅ any | ✅ only own `providerId` (others: 403) |
-| `GET /health/live`, `GET /health/ready`, `GET /metrics` | public | public |
+| `POST /wagering/transactions` | ❌ 403 | ✅ apenas com `providerId` = próprio `provider_id` |
+| `GET /wagering/transactions/{id}` | ✅ qualquer | ✅ apenas suas transações (outras: 404) |
+| `GET /providers/{providerId}/wagering/transactions/{ext}` | ✅ qualquer | ✅ apenas próprio `providerId` (outros: 403) |
+| `GET /health/live`, `GET /health/ready`, `GET /metrics` | público | público |
 
-## 8. HTTP API
+## 8. API HTTP
 
-The examples use `app1` (`:8081`); any instance gives the same results.
+Os exemplos usam `app1` (`:8081`); qualquer instância retorna os mesmos resultados.
 
-### Open a wallet
+### Abrir uma carteira
 
 ```sh
 curl -s -X POST localhost:8081/wallets -H "Authorization: Bearer $OP" -H 'Content-Type: application/json' \
@@ -215,9 +213,9 @@ HTTP 201
  "balance":{"amount":"1000.00","currency":"BRL"},"version":1,
  "createdAt":"2026-09-25T19:33:33.137Z","updatedAt":"2026-09-25T19:33:33.137Z"}
 ```
-A second wallet for the same player and currency returns `409 WALLET_ALREADY_EXISTS`.
+Uma segunda carteira para o mesmo jogador e moeda retorna `409 WALLET_ALREADY_EXISTS`.
 
-### Submit an operation
+### Enviar uma operação
 
 ```sh
 WALLET=01a0da0f-0751-7ce3-9bc7-f1a3e6ca2052
@@ -233,28 +231,28 @@ HTTP 200
 {"transactionId":"01a0da0f-077d-7c70-8275-05e84ea2d57b","status":"PROCESSED",
  "balance":{"amount":"975.00","currency":"BRL"},"idempotentReplay":false}
 ```
-Sending it again, to any instance, returns the same body with
-`"idempotentReplay": true`. The balance is the one observed when the operation
-was first processed, even if the wallet has moved since.
+Enviando novamente, para qualquer instância, retorna o mesmo corpo com
+`"idempotentReplay": true`. O saldo é o observado quando a operação foi
+processada pela primeira vez, mesmo que a carteira tenha se movido desde então.
 
-For `REFUND`/`ROLLBACK`, add `"referenceExternalTransactionId": "..."` to the body.
+Para `REFUND`/`ROLLBACK`, adicione `"referenceExternalTransactionId": "..."` ao corpo.
 
-### Response contract
+### Contrato de resposta
 
-| Situation | HTTP | Body |
+| Situação | HTTP | Corpo |
 | --- | --- | --- |
-| Processed (new or replay) | `200` | `{transactionId, status:"PROCESSED", balance, idempotentReplay}` |
-| Waiting for a reference / pending | `202` | `{transactionId, status:"PENDING_REFERENCE", nextAttemptAt, idempotentReplay}` |
-| Business rejection (persisted, terminal) | `422` | `{transactionId, status:"REJECTED", failureCode, balance, idempotentReplay}` |
-| Invalid input (not persisted) | `400` | `{"error":{"code":"VALIDATION_ERROR" \| "INVALID_JSON" \| "MISSING_IDEMPOTENCY_KEY", "message"}, correlationId}` |
-| Missing / invalid / expired token | `401` | `{"error":{"code":"UNAUTHENTICATED"}}` |
-| Not allowed | `403` | `{"error":{"code":"FORBIDDEN"}}` |
-| Unknown wallet or transaction | `404` | `{"error":{"code":"WALLET_NOT_FOUND" \| "NOT_FOUND"}}` |
-| Key reused with another payload | `409` | `{"error":{"code":"IDEMPOTENCY_KEY_CONFLICT"}}` |
-| External id reused with another key | `409` | `{"error":{"code":"EXTERNAL_TRANSACTION_CONFLICT"}}` |
-| Transient unavailability (DB down, lock timeout) | `503` + `Retry-After: 1` | `{"error":{"code":"SERVICE_UNAVAILABLE"}}` (retry with the same key) |
+| Processado (novo ou replay) | `200` | `{transactionId, status:"PROCESSED", balance, idempotentReplay}` |
+| Aguardando referência / pendente | `202` | `{transactionId, status:"PENDING_REFERENCE", nextAttemptAt, idempotentReplay}` |
+| Rejeição de negócio (persistida, terminal) | `422` | `{transactionId, status:"REJECTED", failureCode, balance, idempotentReplay}` |
+| Entrada inválida (não persistida) | `400` | `{"error":{"code":"VALIDATION_ERROR" \| "INVALID_JSON" \| "MISSING_IDEMPOTENCY_KEY", "message"}, correlationId}` |
+| Token ausente / inválido / expirado | `401` | `{"error":{"code":"UNAUTHENTICATED"}}` |
+| Não permitido | `403` | `{"error":{"code":"FORBIDDEN"}}` |
+| Carteira ou transação desconhecida | `404` | `{"error":{"code":"WALLET_NOT_FOUND" \| "NOT_FOUND"}}` |
+| Chave reutilizada com outro payload | `409` | `{"error":{"code":"IDEMPOTENCY_KEY_CONFLICT"}}` |
+| ID externo reutilizado com outra chave | `409` | `{"error":{"code":"EXTERNAL_TRANSACTION_CONFLICT"}}` |
+| Indisponibilidade transitória (banco caiu, timeout de lock) | `503` + `Retry-After: 1` | `{"error":{"code":"SERVICE_UNAVAILABLE"}}` (reenvie com a mesma chave) |
 
-Examples:
+Exemplos:
 
 ```json
 HTTP 422
@@ -270,28 +268,28 @@ HTTP 409
  "correlationId":"9a082148-1b37-4d4c-b803-4db6ab82723c"}
 ```
 
-### Failure codes
+### Códigos de falha
 
-The codes are stable. **Input errors** are never persisted: fix the request and
-resend it with the same key. **Rejections** are persisted and final for that
-`(providerId, externalTransactionId)`: a corrected operation needs a new
-external id.
+Os códigos são estáveis. **Erros de entrada** nunca são persistidos: corrija a requisição e
+reenvie com a mesma chave. **Rejeições** são persistidas e finais para aquele
+`(providerId, externalTransactionId)`: uma operação corrigida precisa de um novo
+ID externo.
 
-| `failureCode` | Meaning | Nature |
+| `failureCode` | Significado | Natureza |
 | --- | --- | --- |
-| `INSUFFICIENT_FUNDS` | a `BET` larger than the balance | definitive outcome |
-| `REVERSAL_INSUFFICIENT_FUNDS` | a `ROLLBACK` that must debit (it reverses a `WIN`/`REFUND`) larger than the balance | definitive outcome |
-| `REFERENCE_NOT_FOUND` | the reference never arrived within the retry budget/TTL | definitive outcome |
-| `REFERENCE_NOT_PROCESSED` | the reference ended `REJECTED`/`FAILED` (or was still pending at expiry) | definitive outcome |
-| `REFERENCE_ALREADY_REVERSED` | the reference already has a successful `REFUND`/`ROLLBACK` | definitive outcome |
-| `CURRENCY_MISMATCH` | operation currency ≠ wallet currency | client data error (use a new external id) |
-| `PLAYER_WALLET_MISMATCH` | the wallet does not belong to the player | client data error |
-| `REFERENCE_MISMATCH` | provider/player/wallet/currency/round differ from the reference | client data error |
-| `REFERENCE_KIND_NOT_ALLOWED` | e.g. `REFUND` of a `WIN`, `ROLLBACK` of a `ROLLBACK` | client data error |
-| `REVERSAL_AMOUNT_MISMATCH` | partial reversal (amount ≠ referenced amount) | client data error |
-| `PROCESSING_FAILED` | permanent infrastructure failure while resuming (status `FAILED`) | audit |
+| `INSUFFICIENT_FUNDS` | um `BET` maior que o saldo | resultado definitivo |
+| `REVERSAL_INSUFFICIENT_FUNDS` | um `ROLLBACK` que precisa debitar (reverte um `WIN`/`REFUND`) além do saldo | resultado definitivo |
+| `REFERENCE_NOT_FOUND` | a referência nunca chegou dentro do orçamento de retry/TTL | resultado definitivo |
+| `REFERENCE_NOT_PROCESSED` | a referência terminou `REJECTED`/`FAILED` (ou ainda estava pendente na expiração) | resultado definitivo |
+| `REFERENCE_ALREADY_REVERSED` | a referência já tem um `REFUND`/`ROLLBACK` bem-sucedido | resultado definitivo |
+| `CURRENCY_MISMATCH` | moeda da operação ≠ moeda da carteira | erro de dados do cliente (use um novo ID externo) |
+| `PLAYER_WALLET_MISMATCH` | a carteira não pertence ao jogador | erro de dados do cliente |
+| `REFERENCE_MISMATCH` | provedor/jogador/carteira/moeda/rodada diferem da referência | erro de dados do cliente |
+| `REFERENCE_KIND_NOT_ALLOWED` | ex.: `REFUND` de um `WIN`, `ROLLBACK` de um `ROLLBACK` | erro de dados do cliente |
+| `REVERSAL_AMOUNT_MISMATCH` | reversão parcial (valor ≠ valor referenciado) | erro de dados do cliente |
+| `PROCESSING_FAILED` | falha permanente de infraestrutura ao retomar (status `FAILED`) | auditoria |
 
-### Queries
+### Consultas
 
 ```sh
 curl -s localhost:8081/wallets/$WALLET -H "Authorization: Bearer $OP"
@@ -301,11 +299,11 @@ curl -s localhost:8081/wagering/transactions/<transactionId> -H "Authorization: 
 curl -s localhost:8081/providers/provider-a/wagering/transactions/transaction-123 -H "Authorization: Bearer $PA"
 ```
 
-Transaction queries return the status, `failureCode`, `attempts`,
-`nextAttemptAt`, `referenceExpiresAt`, the resolved `referenceTransactionId`
-and the result `balance`, so pending operations can be followed.
+As consultas de transação retornam o status, `failureCode`, `attempts`,
+`nextAttemptAt`, `referenceExpiresAt`, o `referenceTransactionId` resolvido
+e o `balance` resultante, para que operações pendentes possam ser acompanhadas.
 
-### Reconciliation
+### Reconciliação
 
 ```sh
 curl -s -X POST localhost:8081/wallets/$WALLET/reconciliation -H "Authorization: Bearer $OP"
@@ -316,7 +314,7 @@ curl -s -X POST localhost:8081/wallets/$WALLET/reconciliation -H "Authorization:
  "difference":{"amount":"0.00","currency":"BRL"},"consistent":true,"checkedEntries":2}
 ```
 
-## 9. Sending operations through SQS
+## 9. Enviando operações pelo SQS
 
 ```sh
 WALLET=01a0da0f-0751-7ce3-9bc7-f1a3e6ca2052
@@ -328,7 +326,7 @@ docker compose exec localstack awslocal sqs send-message \
   --queue-url http://localhost:4566/000000000000/wager-transactions.fifo \
   --message-group-id "$WALLET" --message-deduplication-id msg-123 --message-body "$BODY"
 
-# inspect the outcome / DLQ / published events
+# inspecionar o resultado / DLQ / eventos publicados
 curl -s localhost:8081/providers/provider-a/wagering/transactions/transaction-456 -H "Authorization: Bearer $PA"
 docker compose exec localstack awslocal sqs receive-message --max-number-of-messages 10 \
   --queue-url http://localhost:4566/000000000000/wager-transactions-dlq.fifo --message-attribute-names All
@@ -336,90 +334,90 @@ docker compose exec localstack awslocal sqs receive-message --max-number-of-mess
   --queue-url http://localhost:4566/000000000000/wallet-events.fifo
 ```
 
-Routing contract: `MessageGroupId = walletId`, `MessageDeduplicationId = messageId`
+Contrato de roteamento: `MessageGroupId = walletId`, `MessageDeduplicationId = messageId`
 (ARCHITECTURE.md §10).
 
-## 10. Tests
+## 10. Testes
 
-| Suite | Needs | Command |
+| Suite | Necessita | Comando |
 | --- | --- | --- |
-| Unit (domain, money, config, parsing…) | nothing | `go test ./...` |
-| Unit with race detector | nothing | `go test -race ./...` |
-| Static checks | nothing | `go vet ./...` (plus `-tags integration`, `-tags e2e`) |
-| Integration: real PostgreSQL, Keycloak and LocalStack; in-process instances | `docker compose up -d postgres keycloak localstack` | `go test -race -count=1 -tags integration ./test/integration/...` |
-| End-to-end: three service processes | `docker compose up -d --build` | `go test -race -count=1 -tags e2e ./test/e2e/...` |
-| Failure simulation: SIGKILL of `app1` under load | full stack | `E2E_CHAOS=1 go test -count=1 -tags e2e -run Chaos ./test/e2e/...` |
+| Unitários (domínio, money, config, parsing…) | nada | `go test ./...` |
+| Unitários com race detector | nada | `go test -race ./...` |
+| Verificações estáticas | nada | `go vet ./...` (mais `-tags integration`, `-tags e2e`) |
+| Integração: PostgreSQL real, Keycloak e LocalStack; instâncias em processo | `docker compose up -d postgres keycloak localstack` | `go test -race -count=1 -tags integration ./test/integration/...` |
+| End-to-end: três processos de serviço | `docker compose up -d --build` | `go test -race -count=1 -tags e2e ./test/e2e/...` |
+| Simulação de falha: SIGKILL do `app1` sob carga | stack completo | `E2E_CHAOS=1 go test -count=1 -tags e2e -run Chaos ./test/e2e/...` |
 
-Shortcuts: `make test`, `make test-race`, `make test-integration`,
+Atalhos: `make test`, `make test-race`, `make test-integration`,
 `make test-e2e`, `make test-chaos`, `make vet`.
 
-The integration suite applies the migrations itself. It uses the restricted
-`wallet_app` role, as production does, and creates **its own SQS queues per
-test**, so it can run while the Compose instances are up. The e2e suite needs
-the three Compose instances healthy.
+A suite de integração aplica as migrações por conta própria. Usa o papel restrito
+`wallet_app`, como em produção, e cria **suas próprias filas SQS por teste**,
+podendo rodar enquanto as instâncias do Compose estão ativas. A suite e2e precisa
+das três instâncias do Compose saudáveis.
 
-What the suites cover, mapped to challenge §13:
+O que as suites cobrem, mapeado para o §13 do desafio:
 
-| Requirement | Test |
+| Requisito | Teste |
 | --- | --- |
-| Money parsing, scale, limits, overflow, invalid input, currency mismatch | `internal/domain/money/money_test.go` (+ fuzz `FuzzParse`) |
-| Wallet invariants, state transitions, 5 kinds, zero policy, opening + events, payload conflict | `internal/domain/domain_test.go` |
-| Migrations up/down, constraints, ledger immutability, atomicity | `test/integration/db_test.go` |
-| Same bet ×50 in parallel → one debit | `TestSameBetFiftyTimesInParallel`, `TestE2ESameBetFiftyTimesAcrossInstances` |
-| 100.00 vs two concurrent 80.00 bets | `TestTwoConcurrentBetsOnLimitedBalance`, `TestE2ETwoBetsRaceAcrossInstances` (10 rounds each) |
-| Independent wallets in parallel / no global lock | `TestIndependentWalletsProgressInParallel`, `TestE2EDistinctWalletsInParallel` |
-| ≥ 3 independent instances | e2e suite (`app1..app3` containers) + 3 pools in integration |
-| Consumer killed after commit, before delete → redelivery | `TestCrashAfterCommitBeforeDelete` |
-| Retries, backoff, DLQ, invalid messages | `TestTransientFailuresExhaustToDLQ`, `TestInvalidMessagesGoToDLQ` |
-| Two competing publishers + recovery between publish and confirmation | `TestOutboxCompetingPublishersAndRecovery`, `TestE2EOutboxPublishes` |
-| Reversal before its reference: resolution / expiry | `TestReversalBeforeReferenceIsResolvedLater`, `TestPendingReferenceExpires`, `TestE2EReversalBeforeReferenceAcrossInstances` |
-| Restart preserves idempotency, pending work and consistency | `TestRestartPreservesPendingAndIdempotency`, `TestResumeCrashedPending`, `TestIdempotencyRules`, `TestE2EChaosKillInstance` |
-| Same operation via HTTP and SQS | `TestSameOperationThroughHTTPAndSQS`, `TestE2EHTTPAndSQSSameOperation` |
-| Fx start/stop, worker termination, resource release | `TestFxLifecycle` |
-| Real IdP; missing/invalid/expired credentials; provider isolation; no financial effect | `TestAuthentication`, `TestAuthorizationAndProviderIsolation` |
-| Stored balance = credits − debits at the end | `AssertConsistent` / `reconcile` in the tests |
+| Parsing de money, escala, limites, overflow, entrada inválida, divergência de moeda | `internal/domain/money/money_test.go` (+ fuzz `FuzzParse`) |
+| Invariantes de carteira, transições de estado, 5 tipos, política de zero, abertura + eventos, conflito de payload | `internal/domain/domain_test.go` |
+| Migrações up/down, constraints, imutabilidade do ledger, atomicidade | `test/integration/db_test.go` |
+| Mesma aposta ×50 em paralelo → um único débito | `TestSameBetFiftyTimesInParallel`, `TestE2ESameBetFiftyTimesAcrossInstances` |
+| 100.00 vs duas apostas de 80.00 concorrentes | `TestTwoConcurrentBetsOnLimitedBalance`, `TestE2ETwoBetsRaceAcrossInstances` (10 rodadas cada) |
+| Carteiras independentes em paralelo / sem lock global | `TestIndependentWalletsProgressInParallel`, `TestE2EDistinctWalletsInParallel` |
+| ≥ 3 instâncias independentes | suite e2e (containers `app1..app3`) + 3 pools na integração |
+| Consumidor morto após commit, antes do delete → reentrega | `TestCrashAfterCommitBeforeDelete` |
+| Retries, backoff, DLQ, mensagens inválidas | `TestTransientFailuresExhaustToDLQ`, `TestInvalidMessagesGoToDLQ` |
+| Dois publishers competindo + recuperação entre publicação e confirmação | `TestOutboxCompetingPublishersAndRecovery`, `TestE2EOutboxPublishes` |
+| Reversão antes de sua referência: resolução / expiração | `TestReversalBeforeReferenceIsResolvedLater`, `TestPendingReferenceExpires`, `TestE2EReversalBeforeReferenceAcrossInstances` |
+| Reinicialização preserva idempotência, trabalho pendente e consistência | `TestRestartPreservesPendingAndIdempotency`, `TestResumeCrashedPending`, `TestIdempotencyRules`, `TestE2EChaosKillInstance` |
+| Mesma operação via HTTP e SQS | `TestSameOperationThroughHTTPAndSQS`, `TestE2EHTTPAndSQSSameOperation` |
+| Início/parada do Fx, encerramento de workers, liberação de recursos | `TestFxLifecycle` |
+| IdP real; credenciais ausentes/inválidas/expiradas; isolamento de provedores; sem efeito financeiro | `TestAuthentication`, `TestAuthorizationAndProviderIsolation` |
+| Saldo armazenado = créditos − débitos ao final | `AssertConsistent` / `reconcile` nos testes |
 
-## 11. Observability
+## 11. Observabilidade
 
-- **Logs**: JSON (`log/slog`) on stdout. Each line carries the identifiers that
-  are available: `instance`, `correlationId` (`X-Correlation-Id` header, or the
-  SQS `messageId`), `messageId`, `transactionId`, `walletId`, `providerId`.
-  Tokens and full financial payloads are never logged.
-- **Metrics**: Prometheus at `GET /metrics`.
+- **Logs**: JSON (`log/slog`) no stdout. Cada linha carrega os identificadores
+  disponíveis: `instance`, `correlationId` (header `X-Correlation-Id`, ou o
+  `messageId` do SQS), `messageId`, `transactionId`, `walletId`, `providerId`.
+  Tokens e payloads financeiros completos nunca são registrados.
+- **Métricas**: Prometheus em `GET /metrics`.
 
-| Metric | Labels | What |
+| Métrica | Labels | O que mede |
 | --- | --- | --- |
-| `wagering_transactions_total` | kind, status, source | results by status |
-| `wagering_duplicates_total` | source, mechanism (`idempotency`/`inbox`) | duplicates detected |
+| `wagering_transactions_total` | kind, status, source | resultados por status |
+| `wagering_duplicates_total` | source, mechanism (`idempotency`/`inbox`) | duplicatas detectadas |
 | `wagering_retries_total` | component | retries (db_tx, sqs, sqs_receive, outbox, pending) |
-| `wagering_sqs_dlq_total` | reason | messages sent to the DLQ |
-| `wagering_concurrency_conflicts_total` | reason | races resolved by retry |
-| `wagering_outbox_lag_seconds` | — | age of the oldest unpublished event |
-| `wagering_outbox_published_total` / `wagering_outbox_publish_failures_total` | event_type | outbox delivery |
-| `wagering_processing_duration_seconds` | source | processing latency histogram |
-| `wagering_reconciliation_divergences_total` | — | reconciliation divergences |
-| `wagering_pending_reference_resolutions_total` | outcome | pending-reference outcomes |
+| `wagering_sqs_dlq_total` | reason | mensagens enviadas para a DLQ |
+| `wagering_concurrency_conflicts_total` | reason | corridas resolvidas por retry |
+| `wagering_outbox_lag_seconds` | — | idade do evento não publicado mais antigo |
+| `wagering_outbox_published_total` / `wagering_outbox_publish_failures_total` | event_type | entrega via outbox |
+| `wagering_processing_duration_seconds` | source | histograma de latência de processamento |
+| `wagering_reconciliation_divergences_total` | — | divergências de reconciliação |
+| `wagering_pending_reference_resolutions_total` | outcome | resultados de referências pendentes |
 
-- **Health**: `GET /health/live` (process) and `GET /health/ready` (PostgreSQL
-  ping + SQS `GetQueueAttributes`; returns 503 while draining on shutdown).
+- **Health**: `GET /health/live` (processo) e `GET /health/ready` (ping do PostgreSQL
+  + `GetQueueAttributes` do SQS; retorna 503 enquanto drena no encerramento).
 
-## 12. Project layout
+## 12. Estrutura do projeto
 
 ```
-cmd/wallet-service     service entry point (fx.New(...).Run())
-cmd/migrate            migration CLI (up, down, down-to, status)
-internal/domain        entities, state machine, business rules, events (no infra imports)
-internal/domain/money  Money value object (int64 minor units)
-internal/app           use cases + ports (UnitOfWork, repositories)
-internal/postgres      pgx adapter: SQL, transactions, locks, error classification, migrator
-internal/messaging     SQS client, inbound consumer, event publisher
-internal/worker        lifecycle-managed loops, outbox relay
-internal/auth          OIDC access-token validation, principal/roles
-internal/httpapi       net/http handlers, middleware, server lifecycle
-internal/observability slog JSON logger, Prometheus metrics
-internal/bootstrap     Fx modules and lifecycle ordering
-migrations             versioned SQL (goose), embedded
-deploy                 Keycloak realm, LocalStack init, PostgreSQL role init
-test/integration       integration suite (build tag integration)
-test/e2e               multi-process suite (build tag e2e)
+cmd/wallet-service     ponto de entrada do serviço (fx.New(...).Run())
+cmd/migrate            CLI de migração (up, down, down-to, status)
+internal/domain        entidades, máquina de estados, regras de negócio, eventos (sem imports de infra)
+internal/domain/money  objeto de valor Money (int64 unidades menores)
+internal/app           casos de uso + ports (UnitOfWork, repositórios)
+internal/postgres      adaptador pgx: SQL, transações, locks, classificação de erros, migrator
+internal/messaging     cliente SQS, consumidor de entrada, publicador de eventos
+internal/worker        loops gerenciados por ciclo de vida, relay do outbox
+internal/auth          validação de access tokens OIDC, principal/papéis
+internal/httpapi       handlers net/http, middleware, ciclo de vida do servidor
+internal/observability logger JSON slog, métricas Prometheus
+internal/bootstrap     módulos Fx e ordenação do ciclo de vida
+migrations             SQL versionado (goose), embutido
+deploy                 realm Keycloak, init LocalStack, init papel PostgreSQL
+test/integration       suite de integração (build tag integration)
+test/e2e               suite multi-processo (build tag e2e)
 ```

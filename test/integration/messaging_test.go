@@ -30,7 +30,7 @@ func newConsumer(t *testing.T, s *tu.Services, c *sqs.Client, q tu.TestQueues) *
 	return messaging.NewConsumer(c, q.Queues, s.Wagering, q.Config, tu.Logger(), s.Metrics)
 }
 
-// receiveOne receives a single message from the inbound queue.
+// receiveOne recebe uma única mensagem da fila de entrada.
 func receiveOne(t *testing.T, c *sqs.Client, q tu.TestQueues, wait time.Duration) (types.Message, bool) {
 	t.Helper()
 	deadline := time.Now().Add(wait)
@@ -52,8 +52,8 @@ func receiveOne(t *testing.T, c *sqs.Client, q tu.TestQueues, wait time.Duration
 	return types.Message{}, false
 }
 
-// TestConsumerProcessesAndDeletes: the happy path through a real queue with
-// the running consumer (fx-like Start/Stop).
+// TestConsumerProcessesAndDeletes: o caminho feliz por uma fila real com
+// o consumer em execução (Start/Stop estilo fx).
 func TestConsumerProcessesAndDeletes(t *testing.T) {
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
 	c := tu.SQSClient(t)
@@ -78,9 +78,9 @@ func TestConsumerProcessesAndDeletes(t *testing.T) {
 	tu.AssertConsistent(t, s.Pool, w.ID())
 }
 
-// TestCrashAfterCommitBeforeDelete: the first consumer commits and "dies"
-// before deleting; the message is redelivered to a second consumer, which
-// recognises it through the inbox. One debit only.
+// TestCrashAfterCommitBeforeDelete: o primeiro consumer confirma e "morre"
+// antes de deletar; a mensagem é reentregue a um segundo consumer, que
+// a reconhece pela inbox. Apenas um débito.
 func TestCrashAfterCommitBeforeDelete(t *testing.T) {
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
 	c := tu.SQSClient(t)
@@ -101,7 +101,7 @@ func TestCrashAfterCommitBeforeDelete(t *testing.T) {
 	}
 	waitBalance(t, s, w.ID(), 6000, time.Second)
 
-	// Redelivery after the visibility timeout, to an independent instance.
+	// Reentrega após o timeout de visibilidade, para uma instância independente.
 	other := tu.NewServices(t, domain.DefaultReferencePolicy)
 	recovering := newConsumer(t, other, c, q)
 	m2, ok := receiveOne(t, c, q, 10*time.Second)
@@ -132,8 +132,8 @@ func TestCrashAfterCommitBeforeDelete(t *testing.T) {
 	tu.AssertConsistent(t, s.Pool, w.ID())
 }
 
-// TestInvalidMessagesGoToDLQ: malformed, forbidden kind (OPENING) and
-// unknown providers are permanent errors -> DLQ with reason.
+// TestInvalidMessagesGoToDLQ: mensagens malformadas, kind proibido (OPENING) e
+// provedores desconhecidos são erros permanentes -> DLQ com motivo.
 func TestInvalidMessagesGoToDLQ(t *testing.T) {
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
 	c := tu.SQSClient(t)
@@ -166,9 +166,9 @@ func TestInvalidMessagesGoToDLQ(t *testing.T) {
 	}
 }
 
-// TestTransientFailuresExhaustToDLQ: with the database unavailable every
-// attempt fails transiently; the message is retried with backoff and the
-// SQS redrive policy moves it to the DLQ after maxReceiveCount.
+// TestTransientFailuresExhaustToDLQ: com o banco indisponível, cada
+// tentativa falha transitoriamente; a mensagem é reprocessada com backoff e a
+// política de redrive do SQS a move para a DLQ após maxReceiveCount.
 func TestTransientFailuresExhaustToDLQ(t *testing.T) {
 	healthy := tu.NewServices(t, domain.DefaultReferencePolicy)
 	w := tu.OpenWallet(t, healthy, "100.00")
@@ -191,7 +191,7 @@ func TestTransientFailuresExhaustToDLQ(t *testing.T) {
 			t.Fatalf("attempt %d outcome %s", attempt, out)
 		}
 	}
-	// Third receive: SQS moves it to the DLQ instead of delivering it.
+	// Terceiro recebimento: o SQS o move para a DLQ em vez de entregá-lo.
 	if _, ok := receiveOne(t, c, q, 5*time.Second); ok {
 		t.Fatal("message delivered beyond maxReceiveCount")
 	}
@@ -204,8 +204,8 @@ func TestTransientFailuresExhaustToDLQ(t *testing.T) {
 	}
 }
 
-// TestSameOperationThroughHTTPAndSQS: the same operation arrives through
-// both entry points concurrently; one debit, both succeed.
+// TestSameOperationThroughHTTPAndSQS: a mesma operação chega por
+// ambos os pontos de entrada concorrentemente; um único débito, ambos têm sucesso.
 func TestSameOperationThroughHTTPAndSQS(t *testing.T) {
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
 	c := tu.SQSClient(t)
@@ -236,15 +236,15 @@ func TestSameOperationThroughHTTPAndSQS(t *testing.T) {
 	}
 }
 
-// TestOutboxCompetingPublishersAndRecovery: two relays share the outbox;
-// one crashes between publish and confirmation; the other recovers the
-// abandoned events after the lease and republishes them with the same
-// eventId. Every event ends up published.
+// TestOutboxCompetingPublishersAndRecovery: dois relays compartilham o outbox;
+// um falha entre publicação e confirmação; o outro recupera os
+// eventos abandonados após o lease e os republica com o mesmo
+// eventId. Todos os eventos são publicados.
 func TestOutboxCompetingPublishersAndRecovery(t *testing.T) {
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
 	c := tu.SQSClient(t)
 	q := tu.CreateQueues(t, c, 3, 5*time.Second)
-	// Produce events for this test.
+	// Produz eventos para este teste.
 	var walletIDs []string
 	for i := 0; i < 5; i++ {
 		w := tu.OpenWallet(t, s, "10.00")
@@ -262,11 +262,11 @@ func TestOutboxCompetingPublishersAndRecovery(t *testing.T) {
 		crashed.Store(m.ID, true)
 		return errors.New("killed between publish and confirm")
 	}
-	// A claims a batch and "crashes" before confirming.
+	// A reivindica um lote e "falha" antes de confirmar.
 	if n, err := relayA.RunOnce(context.Background()); err != nil || n == 0 {
 		t.Fatalf("relay A: n=%d err=%v", n, err)
 	}
-	// Both relays keep competing until the outbox is drained.
+	// Ambos os relays continuam competindo até o outbox ser drenado.
 	relayA.BeforeConfirm = nil
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
@@ -284,7 +284,7 @@ func TestOutboxCompetingPublishersAndRecovery(t *testing.T) {
 	if n := unpublished(t, s, walletIDs); n != 0 {
 		t.Fatalf("%d events still unpublished", n)
 	}
-	// The crashed events were delivered with their original eventId.
+	// Os eventos que falharam foram entregues com seu eventId original.
 	bodies := tu.CountMessages(t, c, q.Queues.Events, 3*time.Second)
 	seen := map[string]int{}
 	for _, b := range bodies {
@@ -337,7 +337,7 @@ func waitBalance(t *testing.T, s *tu.Services, walletID uuid.UUID, want int64, t
 	}
 }
 
-// testutilCounter reads the SQS duplicates counter for a mechanism.
+// testutilCounter lê o contador de duplicatas do SQS para um mecanismo.
 func testutilCounter(m *observability.Metrics, mech string) float64 {
 	return promtest.ToFloat64(m.DuplicatesTotal.WithLabelValues("sqs", mech))
 }

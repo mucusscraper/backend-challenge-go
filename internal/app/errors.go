@@ -2,43 +2,42 @@ package app
 
 import "errors"
 
-// Application errors. Adapters translate them to transport semantics (HTTP
-// status codes, SQS delete/retry/DLQ decisions).
+// Erros da aplicação. Adaptadores os traduzem para semântica de transporte
+// (códigos HTTP, decisões de delete/retry/DLQ do SQS).
 var (
-	// ErrNotFound: the requested resource does not exist (or is not visible
-	// to the caller).
+	// ErrNotFound: o recurso solicitado não existe (ou não é visível ao chamador).
 	ErrNotFound = errors.New("not found")
-	// ErrWalletNotFound: the wallet of an operation does not exist.
+	// ErrWalletNotFound: a carteira de uma operação não existe.
 	ErrWalletNotFound = errors.New("wallet not found")
-	// ErrWalletAlreadyExists: (playerId, currency) already has a wallet.
+	// ErrWalletAlreadyExists: (playerId, currency) já possui uma carteira.
 	ErrWalletAlreadyExists = errors.New("wallet already exists for player and currency")
-	// ErrIdempotencyConflict: the idempotency key was reused with a
-	// different business payload.
+	// ErrIdempotencyConflict: a chave de idempotência foi reutilizada com um
+	// payload de negócio diferente.
 	ErrIdempotencyConflict = errors.New("idempotency key reused with a different payload")
-	// ErrExternalIDConflict: (providerId, externalTransactionId) was already
-	// used with another idempotency key.
+	// ErrExternalIDConflict: (providerId, externalTransactionId) já foi usado
+	// com outra chave de idempotência.
 	ErrExternalIDConflict = errors.New("external transaction already registered with another idempotency key")
-	// ErrMessageConflict: an inbound messageId was redelivered with a
-	// different content hash.
+	// ErrMessageConflict: um messageId de entrada foi reenviado com um hash
+	// de conteúdo diferente.
 	ErrMessageConflict = errors.New("message id reused with a different payload")
-	// ErrRetryableConflict: a concurrency race (unique constraint race,
-	// deadlock, serialization failure) that is safe to retry immediately.
+	// ErrRetryableConflict: uma corrida de concorrência (corrida de constraint
+	// única, deadlock, falha de serialização) que é seguro retentear imediatamente.
 	ErrRetryableConflict = errors.New("retryable concurrency conflict")
-	// ErrConcurrentUpdate: optimistic version check failed.
+	// ErrConcurrentUpdate: verificação de versão otimista falhou.
 	ErrConcurrentUpdate = errors.New("concurrent update detected")
-	// ErrTransient: temporary infrastructure unavailability (database down,
-	// lock timeout, broker unreachable). Callers should retry later.
+	// ErrTransient: indisponibilidade temporária de infraestrutura (banco caiu,
+	// timeout de lock, broker inacessível). Os chamadores devem tentar novamente mais tarde.
 	ErrTransient = errors.New("temporarily unavailable")
 )
 
-// IsRetryable reports whether an error is a concurrency race that the use
-// case may retry right away.
+// IsRetryable informa se um erro é uma corrida de concorrência que o caso
+// de uso pode retentear imediatamente.
 func IsRetryable(err error) bool {
 	return errors.Is(err, ErrRetryableConflict) || errors.Is(err, ErrConcurrentUpdate)
 }
 
-// IsTransient reports whether an error should be retried later (with
-// backoff) rather than treated as permanent.
+// IsTransient informa se um erro deve ser retentado mais tarde (com
+// backoff) em vez de ser tratado como permanente.
 func IsTransient(err error) bool {
 	return errors.Is(err, ErrTransient) || IsRetryable(err)
 }

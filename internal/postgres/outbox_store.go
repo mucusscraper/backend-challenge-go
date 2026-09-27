@@ -10,24 +10,23 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/app"
 )
 
-// OutboxStore gives the relay access to the outbox table. It works outside
-// of the business transactions: rows become visible only after the
-// transaction that created them committed, which is what guarantees that
-// nothing is ever published before its commit.
+// OutboxStore dá ao relay acesso à tabela outbox. Opera fora das transações
+// de negócio: as linhas só ficam visíveis após o commit da transação que as
+// criou, garantindo que nada seja publicado antes do seu commit.
 type OutboxStore struct {
 	pool *pgxpool.Pool
 }
 
-// NewOutboxStore builds the store.
+// NewOutboxStore constrói o store.
 func NewOutboxStore(pool *pgxpool.Pool) *OutboxStore { return &OutboxStore{pool: pool} }
 
 var _ app.OutboxStore = (*OutboxStore)(nil)
 
-// Claim leases up to limit due events to owner for lease. Concurrent
-// publishers never claim the same row at the same time: candidates are
-// locked with FOR UPDATE SKIP LOCKED, and a row stays leased until
-// locked_until. If a publisher dies, its lease expires and another instance
-// claims the row again (abandoned-work recovery).
+// Claim aloca até limit eventos devidos ao owner pelo período lease.
+// Publishers concorrentes nunca reclamam a mesma linha ao mesmo tempo: os
+// candidatos são bloqueados com FOR UPDATE SKIP LOCKED, e uma linha fica
+// alocada até locked_until. Se um publisher morrer, seu lease expira e outra
+// instância reivindica a linha novamente (recuperação de trabalho abandonado).
 func (s *OutboxStore) Claim(ctx context.Context, owner string, lease time.Duration, limit int) ([]app.OutboxMessage, error) {
 	rows, err := s.pool.Query(ctx, `
 		UPDATE outbox_events o
@@ -59,9 +58,10 @@ func (s *OutboxStore) Claim(ctx context.Context, owner string, lease time.Durati
 	return out, mapErr(rows.Err())
 }
 
-// MarkPublished confirms publication. It succeeds whoever owns the lease:
-// if two publishers raced after a lease expiry, both published the same
-// eventId (consumers deduplicate on it) and the first confirmation wins.
+// MarkPublished confirma a publicação. Tem sucesso para quem quer que detenha
+// o lease: se dois publishers correram após a expiração do lease, ambos
+// publicaram o mesmo eventId (consumidores deduplicam por ele) e a primeira
+// confirmação vence.
 func (s *OutboxStore) MarkPublished(ctx context.Context, id uuid.UUID) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE outbox_events
@@ -70,7 +70,7 @@ func (s *OutboxStore) MarkPublished(ctx context.Context, id uuid.UUID) error {
 	return mapErr(err)
 }
 
-// MarkFailed releases the lease and schedules the next attempt (backoff).
+// MarkFailed libera o lease e agenda a próxima tentativa (backoff).
 func (s *OutboxStore) MarkFailed(ctx context.Context, id uuid.UUID, owner, lastError string, next time.Time) error {
 	if len(lastError) > 500 {
 		lastError = lastError[:500]
@@ -82,7 +82,7 @@ func (s *OutboxStore) MarkFailed(ctx context.Context, id uuid.UUID, owner, lastE
 	return mapErr(err)
 }
 
-// Lag returns the age of the oldest unpublished event (0 when none).
+// Lag retorna a idade do evento não publicado mais antigo (0 quando nenhum).
 func (s *OutboxStore) Lag(ctx context.Context) (time.Duration, error) {
 	var seconds float64
 	err := s.pool.QueryRow(ctx, `

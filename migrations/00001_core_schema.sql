@@ -1,24 +1,24 @@
--- Core financial schema: wallets, wager transactions and the append-only
--- ledger. Every financial invariant is enforced here, independently of the
--- application code (see ARCHITECTURE.md, "Invariants in the database").
+-- Esquema financeiro central: carteiras, transações de apostas e o ledger
+-- append-only. Cada invariante financeiro é imposto aqui, independentemente do
+-- código da aplicação (veja ARCHITECTURE.md, "Invariantes no banco de dados").
 
 -- +goose Up
 
--- Wallets -------------------------------------------------------------------
+-- Carteiras -----------------------------------------------------------------
 CREATE TABLE wallets (
     id            UUID        PRIMARY KEY,
     player_id     UUID        NOT NULL,
     currency      CHAR(3)     NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
-    -- Money is stored as BIGINT minor units (cents), never as float.
+    -- Dinheiro é armazenado como unidades menores BIGINT (centavos), nunca como float.
     balance_minor BIGINT      NOT NULL CHECK (balance_minor >= 0),
     version       BIGINT      NOT NULL CHECK (version >= 1),
     created_at    TIMESTAMPTZ NOT NULL,
     updated_at    TIMESTAMPTZ NOT NULL,
-    -- (playerId, currency) identifies a single wallet.
+    -- (playerId, currency) identifica uma única carteira.
     CONSTRAINT wallets_player_currency_key UNIQUE (player_id, currency)
 );
 
--- Wager transactions --------------------------------------------------------
+-- Transações de apostas -----------------------------------------------------
 CREATE TABLE wager_transactions (
     id                                UUID        PRIMARY KEY,
     origin                            TEXT        NOT NULL CHECK (origin IN ('INTERNAL', 'EXTERNAL')),
@@ -46,8 +46,8 @@ CREATE TABLE wager_transactions (
     updated_at                        TIMESTAMPTZ NOT NULL,
     processed_at                      TIMESTAMPTZ,
 
-    -- Internal (OPENING) and external operations are distinguished by the
-    -- schema: OPENING has no provider metadata, external ops require it.
+    -- Operações internas (OPENING) e externas são distinguidas pelo
+    -- schema: OPENING não tem metadados de provedor, ops externas os exigem.
     CONSTRAINT wager_transactions_origin_shape CHECK (
         (origin = 'INTERNAL' AND kind = 'OPENING' AND status = 'PROCESSED'
             AND provider_id IS NULL AND external_transaction_id IS NULL
@@ -61,7 +61,7 @@ CREATE TABLE wager_transactions (
             AND idempotency_key IS NOT NULL AND payload_hash IS NOT NULL
             AND round_id IS NOT NULL AND game_id IS NOT NULL)
     ),
-    -- Zero-amount policy: LOSS is exactly zero, money-moving kinds are > 0.
+    -- Política de zero: LOSS é exatamente zero, kinds que movem dinheiro são > 0.
     CONSTRAINT wager_transactions_amount_policy CHECK (
         (kind = 'LOSS' AND amount_minor = 0) OR (kind <> 'LOSS' AND amount_minor > 0)
     ),
@@ -76,32 +76,32 @@ CREATE TABLE wager_transactions (
     )
 );
 
--- Idempotency: one operation per (provider, external id) and per
--- (provider, idempotency key). Keys are scoped by provider so providers are
--- isolated from each other.
+-- Idempotência: uma operação por (provider, id externo) e por
+-- (provider, chave de idempotência). As chaves têm escopo por provedor para
+-- isolá-los uns dos outros.
 CREATE UNIQUE INDEX wager_transactions_provider_external_key
     ON wager_transactions (provider_id, external_transaction_id) WHERE origin = 'EXTERNAL';
 CREATE UNIQUE INDEX wager_transactions_provider_idempotency_key
     ON wager_transactions (provider_id, idempotency_key) WHERE origin = 'EXTERNAL';
 
--- A wallet has at most one OPENING credit.
+-- Uma carteira tem no máximo um crédito OPENING.
 CREATE UNIQUE INDEX wager_transactions_single_opening
     ON wager_transactions (wallet_id) WHERE kind = 'OPENING';
 
--- A reference can have at most one successful reversal (REFUND or ROLLBACK).
+-- Uma referência pode ter no máximo uma reversão bem-sucedida (REFUND ou ROLLBACK).
 CREATE UNIQUE INDEX wager_transactions_single_reversal
     ON wager_transactions (reference_transaction_id)
     WHERE kind IN ('REFUND', 'ROLLBACK') AND status = 'PROCESSED';
 
--- Work queue of the pending-reference worker.
+-- Fila de trabalho do worker de referências pendentes.
 CREATE INDEX wager_transactions_due
     ON wager_transactions (next_attempt_at) WHERE status IN ('PENDING', 'PENDING_REFERENCE');
 
 CREATE INDEX wager_transactions_wallet ON wager_transactions (wallet_id, created_at);
 
--- Ledger --------------------------------------------------------------------
+-- Ledger ---------------------------------------------------------------------
 CREATE TABLE wallet_ledger_entries (
-    -- seq gives a stable, gap-tolerant order for cursor pagination.
+    -- seq fornece uma ordem estável e tolerante a lacunas para paginação por cursor.
     seq                  BIGINT      GENERATED ALWAYS AS IDENTITY UNIQUE,
     id                   UUID        PRIMARY KEY,
     wallet_id            UUID        NOT NULL REFERENCES wallets (id),
@@ -113,9 +113,9 @@ CREATE TABLE wallet_ledger_entries (
     balance_after_minor  BIGINT      NOT NULL CHECK (balance_after_minor >= 0),
     wallet_version       BIGINT      NOT NULL CHECK (wallet_version >= 1),
     created_at           TIMESTAMPTZ NOT NULL,
-    -- One entry per (wallet, transaction): a transaction cannot move money twice.
+    -- Uma entrada por (carteira, transação): uma transação não pode mover dinheiro duas vezes.
     CONSTRAINT wallet_ledger_wallet_transaction_key UNIQUE (wallet_id, transaction_id),
-    -- One entry per wallet version: two writers cannot both apply on the same version.
+    -- Uma entrada por versão de carteira: dois writers não podem aplicar na mesma versão.
     CONSTRAINT wallet_ledger_wallet_version_key UNIQUE (wallet_id, wallet_version),
     CONSTRAINT wallet_ledger_arithmetic CHECK (
         (direction = 'CREDIT' AND balance_after_minor = balance_before_minor + amount_minor)
@@ -125,10 +125,10 @@ CREATE TABLE wallet_ledger_entries (
 
 CREATE INDEX wallet_ledger_wallet_seq ON wallet_ledger_entries (wallet_id, seq);
 
--- Protection triggers ---------------------------------------------------------
+-- Triggers de proteção -------------------------------------------------------
 
 -- +goose StatementBegin
--- The ledger is append-only: UPDATE and DELETE always fail.
+-- O ledger é append-only: UPDATE e DELETE sempre falham.
 CREATE FUNCTION forbid_ledger_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'wallet_ledger_entries is append-only (% not allowed)', TG_OP
@@ -146,8 +146,8 @@ CREATE TRIGGER wallet_ledger_no_truncate
     FOR EACH STATEMENT EXECUTE FUNCTION forbid_ledger_mutation();
 
 -- +goose StatementBegin
--- Wallet guard: identity is immutable; the version starts at 1 and grows by
--- exactly one per balance change, never otherwise. Wallets are never deleted.
+-- Guard de carteira: a identidade é imutável; a versão começa em 1 e cresce
+-- exatamente um por mudança de saldo, nunca de outra forma. Carteiras nunca são deletadas.
 CREATE FUNCTION guard_wallet_row() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_OP = 'DELETE' THEN
@@ -180,9 +180,9 @@ CREATE TRIGGER wallets_guard
     FOR EACH ROW EXECUTE FUNCTION guard_wallet_row();
 
 -- +goose StatementBegin
--- Every balance change must be matched by a ledger entry committed in the
--- same transaction. The check is DEFERRED to COMMIT so the application may
--- write the wallet and the entry in any order.
+-- Cada mudança de saldo deve ser correspondida por uma entrada de ledger confirmada na
+-- mesma transação. A verificação é DEFERIDA ao COMMIT para que a aplicação possa
+-- escrever a carteira e a entrada em qualquer ordem.
 CREATE FUNCTION check_wallet_ledger_consistency() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     before_minor BIGINT;
@@ -219,8 +219,8 @@ CREATE CONSTRAINT TRIGGER wallets_ledger_consistency
     FOR EACH ROW EXECUTE FUNCTION check_wallet_ledger_consistency();
 
 -- +goose StatementBegin
--- Wager transactions: identity and payload are immutable, terminal states are
--- final, rows are never deleted.
+-- Transações de apostas: identidade e payload são imutáveis, estados terminais são
+-- finais, linhas nunca são deletadas.
 CREATE FUNCTION guard_wager_transaction_row() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_OP = 'DELETE' THEN

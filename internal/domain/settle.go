@@ -9,25 +9,25 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/domain/money"
 )
 
-// IDGenerator produces new unique identifiers (UUIDv7 in production).
+// IDGenerator produz novos identificadores únicos (UUIDv7 em produção).
 type IDGenerator func() uuid.UUID
 
-// ReferencePolicy bounds how long a transaction may wait for a reference
-// that has not arrived yet (or is itself still pending).
+// ReferencePolicy limita por quanto tempo uma transação pode esperar por uma
+// referência que ainda não chegou (ou que ainda está pendente).
 type ReferencePolicy struct {
-	// MaxAttempts is the maximum number of resolution attempts, counting the
-	// first synchronous one.
+	// MaxAttempts é o número máximo de tentativas de resolução, contando a
+	// primeira síncrona.
 	MaxAttempts int
-	// TTL is the maximum time since the transaction was created.
+	// TTL é o tempo máximo desde a criação da transação.
 	TTL time.Duration
-	// BaseBackoff is the delay after the first attempt; it doubles on every
-	// attempt (exponential backoff) up to MaxBackoff.
+	// BaseBackoff é o atraso após a primeira tentativa; dobra a cada tentativa
+	// (backoff exponencial) até MaxBackoff.
 	BaseBackoff time.Duration
-	// MaxBackoff caps the delay between attempts.
+	// MaxBackoff limita o atraso entre tentativas.
 	MaxBackoff time.Duration
 }
 
-// DefaultReferencePolicy is used when no policy is configured.
+// DefaultReferencePolicy é usada quando nenhuma política está configurada.
 var DefaultReferencePolicy = ReferencePolicy{
 	MaxAttempts: 10,
 	TTL:         10 * time.Minute,
@@ -35,7 +35,7 @@ var DefaultReferencePolicy = ReferencePolicy{
 	MaxBackoff:  60 * time.Second,
 }
 
-// Delay returns the backoff before attempt number attempt+1 (attempt >= 1).
+// Delay retorna o backoff antes da tentativa número attempt+1 (attempt >= 1).
 func (p ReferencePolicy) Delay(attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1
@@ -53,18 +53,18 @@ func (p ReferencePolicy) Delay(attempt int) time.Duration {
 	return d
 }
 
-// ReferenceState is what the application layer found when resolving
+// ReferenceState é o que a camada de aplicação encontrou ao resolver
 // (providerId, referenceExternalTransactionId).
 type ReferenceState struct {
-	// Transaction is the referenced transaction, nil when not found.
+	// Transaction é a transação referenciada, nil quando não encontrada.
 	Transaction *WagerTransaction
-	// AlreadyReversed is true when a PROCESSED REFUND or ROLLBACK already
-	// targets the reference. The database enforces the same rule with a
-	// partial unique index, so a race cannot produce two reversals.
+	// AlreadyReversed é true quando um REFUND ou ROLLBACK PROCESSED já tem
+	// como alvo a referência. O banco aplica a mesma regra com um índice único
+	// parcial, de modo que uma corrida não pode produzir duas reversões.
 	AlreadyReversed bool
 }
 
-// SettleContext carries the non-deterministic inputs of Settle.
+// SettleContext carrega as entradas não determinísticas de Settle.
 type SettleContext struct {
 	Now         time.Time
 	NewID       IDGenerator
@@ -72,32 +72,32 @@ type SettleContext struct {
 	Policy      ReferencePolicy
 }
 
-// Settlement is the outcome of Settle: the ledger entry to append (if the
-// balance changed) and the events to store in the outbox. The transaction
-// and wallet passed to Settle are mutated in place.
+// Settlement é o resultado de Settle: a entrada do ledger a adicionar (se o
+// saldo mudou) e os eventos a armazenar no outbox. A transação e a carteira
+// passadas para Settle são mutadas no lugar.
 type Settlement struct {
 	Entry  *LedgerEntry
 	Events []Event
 }
 
-// Settle applies an open (PENDING or PENDING_REFERENCE) transaction to its
-// wallet. It encodes every business rule of the five external kinds:
+// Settle aplica uma transação aberta (PENDING ou PENDING_REFERENCE) à sua
+// carteira. Codifica todas as regras de negócio dos cinco tipos externos:
 //
-//   - BET: debit, positive amount, sufficient balance (else INSUFFICIENT_FUNDS);
-//   - WIN: credit; an optional reference must be a BET of the same round;
-//   - LOSS: no movement, no ledger entry, no version change;
-//   - REFUND: credit of the full amount of a PROCESSED BET;
-//   - ROLLBACK: opposite movement of a PROCESSED BET, WIN or REFUND, full
-//     amount; a debit that would make the balance negative is rejected with
+//   - BET: débito, valor positivo, saldo suficiente (senão INSUFFICIENT_FUNDS);
+//   - WIN: crédito; uma referência opcional deve ser um BET da mesma rodada;
+//   - LOSS: sem movimento, sem entrada no ledger, sem mudança de versão;
+//   - REFUND: crédito do valor total de um BET PROCESSED;
+//   - ROLLBACK: movimento oposto de um BET, WIN ou REFUND PROCESSED, valor
+//     total; um débito que tornaria o saldo negativo é rejeitado com
 //     REVERSAL_INSUFFICIENT_FUNDS.
 //
-// A reference that is missing (or still pending) moves the transaction to
-// PENDING_REFERENCE with exponential backoff until the policy expires, then
-// the transaction is REJECTED.
+// Uma referência ausente (ou ainda pendente) move a transação para
+// PENDING_REFERENCE com backoff exponencial até a política expirar, então
+// a transação é REJECTED.
 //
-// Business refusals are not returned as errors: they produce a REJECTED
-// transaction plus a WagerTransactionRejected event. An error is returned
-// only for invalid calls or broken invariants.
+// Recusas de negócio não são retornadas como erros: produzem uma transação
+// REJECTED mais um evento WagerTransactionRejected. Um erro é retornado
+// apenas para chamadas inválidas ou invariantes quebrados.
 func Settle(t *WagerTransaction, w *Wallet, ref ReferenceState, c SettleContext) (Settlement, error) {
 	if t == nil || w == nil || c.NewID == nil || c.Now.IsZero() {
 		return Settlement{}, invalidArg("settle requires transaction, wallet, id generator and time")
@@ -142,7 +142,7 @@ func (s *settler) run() (Settlement, error) {
 			if code != "" {
 				return s.rejectWith(code)
 			}
-			return s.out, nil // pending
+			return s.out, nil // pendente
 		}
 		refTx = s.ref.Transaction
 		t.resolveReference(refTx.id)
@@ -174,8 +174,8 @@ func (s *settler) run() (Settlement, error) {
 	return s.processed(&entry)
 }
 
-// movementFor returns the direction of the wallet movement for a kind, and
-// false when the kind does not move money (LOSS).
+// movementFor retorna a direção do movimento da carteira para um tipo, e
+// false quando o tipo não movimenta dinheiro (LOSS).
 func movementFor(kind Kind, ref *WagerTransaction) (Direction, bool) {
 	switch kind {
 	case KindBet:
@@ -185,21 +185,21 @@ func movementFor(kind Kind, ref *WagerTransaction) (Direction, bool) {
 	case KindRollback:
 		d, _ := movementFor(ref.kind, nil)
 		return d.Opposite(), true
-	default: // LOSS
+	default: // LOSS — sem movimento
 		return "", false
 	}
 }
 
-// allowedReferenceKinds lists what each kind may reference.
+// allowedReferenceKinds lista o que cada tipo pode referenciar.
 var allowedReferenceKinds = map[Kind][]Kind{
 	KindWin:      {KindBet},
 	KindRefund:   {KindBet},
 	KindRollback: {KindBet, KindWin, KindRefund},
 }
 
-// checkReference validates the reference. It returns ready=true when the
-// operation can proceed, a failure code for a definitive rejection, or
-// neither when the transaction was moved to PENDING_REFERENCE.
+// checkReference valida a referência. Retorna ready=true quando a operação
+// pode prosseguir, um failure code para uma rejeição definitiva, ou nenhum
+// dos dois quando a transação foi movida para PENDING_REFERENCE.
 func (s *settler) checkReference() (ready bool, code FailureCode, err error) {
 	t, ref := s.t, s.ref.Transaction
 	if ref == nil {
@@ -238,8 +238,8 @@ func kindAllowed(kind, refKind Kind) bool {
 	return false
 }
 
-// waitForReference reschedules the transaction or, when the retry budget or
-// TTL is exhausted, rejects it with expiredCode.
+// waitForReference reagenda a transação ou, quando o orçamento de retry ou
+// o TTL se esgota, a rejeita com expiredCode.
 func (s *settler) waitForReference(expiredCode FailureCode) error {
 	t, p, now := s.t, s.c.Policy, s.c.Now
 	if p.MaxAttempts <= 0 {
@@ -317,14 +317,14 @@ func (s *settler) processed(entry *LedgerEntry) (Settlement, error) {
 	return s.out, nil
 }
 
-// FailPermanently marks an open transaction as FAILED (infrastructure
-// failure recorded for audit). No event is emitted: FAILED is an internal
-// audit state, not a business outcome.
+// FailPermanently marca uma transação aberta como FAILED (falha de
+// infraestrutura registrada para auditoria). Nenhum evento é emitido: FAILED
+// é um estado de auditoria interno, não um resultado de negócio.
 func FailPermanently(t *WagerTransaction, now time.Time) error {
 	return t.MarkFailed(FailureProcessingFailed, now)
 }
 
-// OpenWalletParams groups the inputs of OpenWallet.
+// OpenWalletParams agrupa as entradas de OpenWallet.
 type OpenWalletParams struct {
 	WalletID       uuid.UUID
 	PlayerID       uuid.UUID
@@ -334,11 +334,11 @@ type OpenWalletParams struct {
 	NewID          IDGenerator
 }
 
-// Opening is the result of opening a wallet. For a positive initial balance
-// it contains the internal OPENING transaction (already PROCESSED), its
-// CREDIT ledger entry (version 1, 0.00 -> initial) and the
-// WagerTransactionProcessed + WalletBalanceChanged events. For a zero
-// initial balance only the wallet is created.
+// Opening é o resultado de abertura de uma carteira. Para um saldo inicial
+// positivo contém a transação OPENING interna (já PROCESSED), sua entrada
+// CREDIT no ledger (versão 1, 0.00 -> inicial) e os eventos
+// WagerTransactionProcessed + WalletBalanceChanged. Para saldo inicial zero
+// apenas a carteira é criada.
 type Opening struct {
 	Wallet      *Wallet
 	Transaction *WagerTransaction
@@ -346,8 +346,8 @@ type Opening struct {
 	Events      []Event
 }
 
-// OpenWallet creates a wallet (version 1) and, when the initial balance is
-// positive, everything that must be committed with it.
+// OpenWallet cria uma carteira (versão 1) e, quando o saldo inicial é
+// positivo, tudo que deve ser commitado junto com ela.
 func OpenWallet(p OpenWalletParams) (Opening, error) {
 	if p.NewID == nil {
 		return Opening{}, invalidArg("id generator is required")

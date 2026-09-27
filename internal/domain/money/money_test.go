@@ -121,7 +121,7 @@ func TestArithmetic(t *testing.T) {
 	if c, _ := a.Cmp(a); c != 0 {
 		t.Fatalf("Cmp = %d", c)
 	}
-	// immutability: operands are unchanged
+	// imutabilidade: os operandos não são alterados
 	if a.Amount() != "100.00" || b.Amount() != "80.00" {
 		t.Fatal("operands were mutated")
 	}

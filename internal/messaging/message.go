@@ -11,14 +11,14 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/domain"
 )
 
-// MessageTypeWagerTransactionRequested is the only accepted inbound type.
+// MessageTypeWagerTransactionRequested é o único tipo de entrada aceito.
 const MessageTypeWagerTransactionRequested = "WagerTransactionRequested"
 
-// ErrInvalidMessage marks a message that can never be processed (bad JSON,
-// wrong type, missing ids). Such messages go straight to the DLQ.
+// ErrInvalidMessage marca uma mensagem que nunca pode ser processada (JSON inválido,
+// tipo errado, ids ausentes). Essas mensagens vão direto para a DLQ.
 var ErrInvalidMessage = errors.New("invalid message")
 
-// InboundEnvelope is the JSON body of an inbound message.
+// InboundEnvelope é o corpo JSON de uma mensagem de entrada.
 type InboundEnvelope struct {
 	MessageID     string          `json:"messageId"`
 	Type          string          `json:"type"`
@@ -27,8 +27,8 @@ type InboundEnvelope struct {
 	Data          json.RawMessage `json:"data"`
 }
 
-// WagerRequestData is the "data" of a WagerTransactionRequested message.
-// Money uses the external contract {"amount":"25.00","currency":"BRL"}.
+// WagerRequestData é o "data" de uma mensagem WagerTransactionRequested.
+// Money usa o contrato externo {"amount":"25.00","currency":"BRL"}.
 type WagerRequestData struct {
 	ProviderID            string `json:"providerId"`
 	ExternalTransactionID string `json:"externalTransactionId"`
@@ -45,14 +45,15 @@ type WagerRequestData struct {
 	ReferenceExternalTransactionID string `json:"referenceExternalTransactionId,omitempty"`
 }
 
-// ParsedMessage is a structurally valid inbound message.
+// ParsedMessage é uma mensagem de entrada estruturalmente válida.
 type ParsedMessage struct {
 	Envelope InboundEnvelope
 	Raw      domain.RawExternalRequest
 }
 
-// ParseInbound decodes and structurally validates a message body. Unknown
-// fields are rejected so that typos cannot silently drop business data.
+// ParseInbound decodifica e valida estruturalmente o corpo de uma mensagem.
+// Campos desconhecidos são rejeitados para que erros de digitação não descartam
+// silenciosamente dados de negócio.
 func ParseInbound(body string) (ParsedMessage, error) {
 	var env InboundEnvelope
 	dec := json.NewDecoder(bytes.NewReader([]byte(body)))
@@ -90,9 +91,9 @@ func ParseInbound(body string) (ParsedMessage, error) {
 	}, nil
 }
 
-// MessageHash is the inbox hash of a message: SHA-256 over the message
-// type, the idempotency key and the canonical business payload hash. A
-// redelivery of the same messageId must produce the same value.
+// MessageHash é o hash de inbox de uma mensagem: SHA-256 sobre o tipo de
+// mensagem, a chave de idempotência e o hash canônico de payload de negócio.
+// Uma reentrega do mesmo messageId deve produzir o mesmo valor.
 func MessageHash(msgType string, req domain.ExternalRequest) string {
 	sum := sha256.Sum256([]byte(msgType + "\n" + req.IdempotencyKey() + "\n" + req.PayloadHash()))
 	return hex.EncodeToString(sum[:])

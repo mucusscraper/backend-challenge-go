@@ -13,15 +13,15 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/domain/money"
 )
 
-// Field limits for external identifiers.
+// Limites de campo para identificadores externos.
 const (
 	maxIdentifierLength     = 128
 	maxIdempotencyKeyLength = 255
 )
 
-// RawExternalRequest is the untrusted, transport-neutral shape of a provider
-// operation. HTTP and SQS adapters both fill this struct and hand it to
-// NewExternalRequest, which guarantees identical validation and hashing.
+// RawExternalRequest é o formato não confiável e neutro em relação ao transporte
+// de uma operação de provedor. Os adaptadores HTTP e SQS preenchem esta struct
+// e a passam para NewExternalRequest, que garante validação e hashing idênticos.
 type RawExternalRequest struct {
 	ProviderID                     string
 	ExternalTransactionID          string
@@ -36,8 +36,8 @@ type RawExternalRequest struct {
 	ReferenceExternalTransactionID string
 }
 
-// ExternalRequest is a validated provider operation. Its fields are
-// unexported so it can only be obtained through NewExternalRequest.
+// ExternalRequest é uma operação de provedor validada. Seus campos são
+// não exportados para que só possa ser obtida por NewExternalRequest.
 type ExternalRequest struct {
 	providerID            string
 	externalTransactionID string
@@ -52,12 +52,12 @@ type ExternalRequest struct {
 	payloadHash           string
 }
 
-// NewExternalRequest validates a raw request and computes its payload hash.
-// All validation problems are joined into a single error wrapping
-// ErrInvalidArgument, so a client gets every issue at once.
+// NewExternalRequest valida uma requisição bruta e calcula seu hash de payload.
+// Todos os problemas de validação são unidos em um único erro encapsulando
+// ErrInvalidArgument, de modo que um cliente recebe todos os problemas de uma vez.
 //
-// Zero-amount policy: LOSS must be exactly 0.00; BET, WIN, REFUND and
-// ROLLBACK must be > 0. Negative amounts are always rejected.
+// Política de zero: LOSS deve ser exatamente 0.00; BET, WIN, REFUND e
+// ROLLBACK devem ser > 0. Valores negativos são sempre rejeitados.
 func NewExternalRequest(raw RawExternalRequest) (ExternalRequest, error) {
 	var errs []error
 	check := func(err error) {
@@ -117,7 +117,7 @@ func NewExternalRequest(raw RawExternalRequest) (ExternalRequest, error) {
 	return r, nil
 }
 
-// validateAmountForKind applies the zero-amount policy of each kind.
+// validateAmountForKind aplica a política de zero de cada tipo.
 func validateAmountForKind(kind Kind, m money.Money) error {
 	switch kind {
 	case KindLoss:
@@ -150,8 +150,8 @@ func validateIdentifier(field, value string, maxLen int) error {
 	return nil
 }
 
-// parseUUID accepts only the canonical 36-char form and returns a UUID; the
-// canonical lower-case string is what enters the hash.
+// parseUUID aceita apenas a forma canônica de 36 caracteres e retorna um UUID;
+// a string canônica em minúsculas é o que entra no hash.
 func parseUUID(field, value string) (uuid.UUID, error) {
 	if len(value) != 36 {
 		return uuid.Nil, invalidArg("%s must be a UUID", field)
@@ -163,22 +163,21 @@ func parseUUID(field, value string) (uuid.UUID, error) {
 	return id, nil
 }
 
-// computeHash returns the SHA-256 (hex) of the canonical JSON of the
-// business fields.
+// computeHash retorna o SHA-256 (hex) do JSON canônico dos campos de negócio.
 //
-// Canonical form:
-//   - a JSON object whose keys are sorted lexicographically (encoding/json
-//     sorts map keys), with no insignificant whitespace;
-//   - fields: externalTransactionId, gameId, kind, money{amount,currency},
-//     playerId, providerId, referenceExternalTransactionId (only when
-//     present), roundId, walletId;
-//   - UUIDs in lower-case canonical form, amount normalised to exactly two
-//     decimals ("25" -> "25.00"), currency upper-case ISO code;
-//   - the idempotency key, messageId, correlation ids, timestamps and any
-//     other transport metadata are excluded.
+// Forma canônica:
+//   - um objeto JSON cujas chaves são ordenadas lexicograficamente (encoding/json
+//     ordena as chaves de map), sem espaços em branco insignificantes;
+//   - campos: externalTransactionId, gameId, kind, money{amount,currency},
+//     playerId, providerId, referenceExternalTransactionId (apenas quando
+//     presente), roundId, walletId;
+//   - UUIDs em forma canônica minúscula, valor normalizado para exatamente dois
+//     decimais ("25" -> "25.00"), código de moeda ISO maiúsculo;
+//   - a chave de idempotência, messageId, correlation ids, timestamps e
+//     quaisquer outros metadados de transporte são excluídos.
 //
-// HTTP and SQS build the same RawExternalRequest, therefore the same
-// operation yields the same hash through both entry points.
+// HTTP e SQS constroem o mesmo RawExternalRequest, portanto a mesma
+// operação produz o mesmo hash por ambos os pontos de entrada.
 func (r ExternalRequest) computeHash() string {
 	doc := map[string]any{
 		"providerId":            r.providerID,
@@ -198,42 +197,42 @@ func (r ExternalRequest) computeHash() string {
 	}
 	b, err := json.Marshal(doc)
 	if err != nil {
-		// Marshalling a map of strings cannot fail.
+		// Fazer marshal de um map de strings não pode falhar.
 		panic("domain: canonical json: " + err.Error())
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
 
-// ProviderID returns the provider identifier.
+// ProviderID retorna o identificador do provedor.
 func (r ExternalRequest) ProviderID() string { return r.providerID }
 
-// ExternalTransactionID returns the provider-side transaction identifier.
+// ExternalTransactionID retorna o identificador da transação no lado do provedor.
 func (r ExternalRequest) ExternalTransactionID() string { return r.externalTransactionID }
 
-// IdempotencyKey returns the key supplied by the client.
+// IdempotencyKey retorna a chave fornecida pelo cliente.
 func (r ExternalRequest) IdempotencyKey() string { return r.idempotencyKey }
 
-// PlayerID returns the player identifier.
+// PlayerID retorna o identificador do jogador.
 func (r ExternalRequest) PlayerID() uuid.UUID { return r.playerID }
 
-// WalletID returns the wallet identifier.
+// WalletID retorna o identificador da carteira.
 func (r ExternalRequest) WalletID() uuid.UUID { return r.walletID }
 
-// RoundID returns the round identifier.
+// RoundID retorna o identificador da rodada.
 func (r ExternalRequest) RoundID() string { return r.roundID }
 
-// GameID returns the game identifier.
+// GameID retorna o identificador do jogo.
 func (r ExternalRequest) GameID() string { return r.gameID }
 
-// Kind returns the operation kind.
+// Kind retorna o tipo da operação.
 func (r ExternalRequest) Kind() Kind { return r.kind }
 
-// Money returns the operation amount.
+// Money retorna o valor da operação.
 func (r ExternalRequest) Money() money.Money { return r.money }
 
-// ReferenceExternalTransactionID returns the optional reference.
+// ReferenceExternalTransactionID retorna a referência opcional.
 func (r ExternalRequest) ReferenceExternalTransactionID() string { return r.referenceExternalID }
 
-// PayloadHash returns the canonical business hash.
+// PayloadHash retorna o hash canônico de negócio.
 func (r ExternalRequest) PayloadHash() string { return r.payloadHash }

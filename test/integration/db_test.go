@@ -1,6 +1,6 @@
 //go:build integration
 
-// Integration tests run against the real infrastructure of docker compose:
+// Testes de integração rodam contra a infraestrutura real do docker compose:
 //
 //	docker compose up -d postgres keycloak localstack
 //	go test -race -tags integration ./test/integration/...
@@ -21,8 +21,8 @@ import (
 	tu "github.com/mucusscraper/backend-challenge-go/test/testutil"
 )
 
-// TestMigrationsUpDownUp applies, fully reverts and re-applies the
-// migrations on a throwaway database.
+// TestMigrationsUpDownUp aplica, reverte completamente e reaaplica as
+// migrações em um banco de dados descartável.
 func TestMigrationsUpDownUp(t *testing.T) {
 	ctx := context.Background()
 	owner := tu.OwnerPool(t)
@@ -72,8 +72,8 @@ func expectDBError(t *testing.T, err error, fragment string) {
 	}
 }
 
-// TestLedgerIsAppendOnly: UPDATE/DELETE/TRUNCATE are refused even for the
-// owner role (triggers), and the runtime role lacks the privileges anyway.
+// TestLedgerIsAppendOnly: UPDATE/DELETE/TRUNCATE são recusados mesmo para o
+// role owner (triggers), e o role de runtime não tem os privilégios de qualquer forma.
 func TestLedgerIsAppendOnly(t *testing.T) {
 	ctx := context.Background()
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
@@ -93,8 +93,8 @@ func TestLedgerIsAppendOnly(t *testing.T) {
 	expectDBError(t, err, "permission denied")
 }
 
-// TestSchemaInvariants exercises the constraints directly with SQL,
-// bypassing the application.
+// TestSchemaInvariants exercita as restrições diretamente em SQL,
+// contornando a aplicação.
 func TestSchemaInvariants(t *testing.T) {
 	ctx := context.Background()
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
@@ -174,8 +174,8 @@ func TestSchemaInvariants(t *testing.T) {
 	})
 }
 
-// TestFinancialAtomicity: a failure after the balance update rolls back the
-// wallet, the transaction, the ledger entry and the outbox rows together.
+// TestFinancialAtomicity: uma falha após a atualização de saldo reverte
+// a carteira, a transação, a entrada do ledger e as linhas do outbox juntas.
 func TestFinancialAtomicity(t *testing.T) {
 	ctx := context.Background()
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
@@ -185,8 +185,8 @@ func TestFinancialAtomicity(t *testing.T) {
 	var outboxBefore int
 	_ = owner.QueryRow(ctx, `SELECT count(*) FROM outbox_events`).Scan(&outboxBefore)
 
-	// Simulate a crash in the middle of the unit of work: everything is
-	// written, then the transaction is rolled back instead of committed.
+	// Simula um crash no meio da unit of work: tudo é
+	// escrito, então a transação é revertida em vez de confirmada.
 	tx, err := owner.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +230,7 @@ func TestFinancialAtomicity(t *testing.T) {
 	tu.AssertConsistent(t, s.Pool, w.ID())
 }
 
-// TestOpeningPersistence verifies the OPENING shape and events in the DB.
+// TestOpeningPersistence verifica o formato do OPENING e os eventos no banco.
 func TestOpeningPersistence(t *testing.T) {
 	ctx := context.Background()
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
@@ -264,7 +264,7 @@ func TestOpeningPersistence(t *testing.T) {
 	if entries != 1 || net != 100000 {
 		t.Fatalf("opening ledger: %d %d", entries, net)
 	}
-	// Zero opening: no OPENING, no ledger, no financial events.
+	// Abertura com zero: sem OPENING, sem ledger, sem eventos financeiros.
 	z := tu.OpenWallet(t, s, "0.00")
 	var n int
 	_ = s.Pool.QueryRow(ctx, `SELECT count(*) FROM wager_transactions WHERE wallet_id = $1`, z.ID()).Scan(&n)
@@ -272,7 +272,7 @@ func TestOpeningPersistence(t *testing.T) {
 	if n != 0 || entries != 0 {
 		t.Fatalf("zero opening created rows: tx=%d ledger=%d", n, entries)
 	}
-	// Duplicate wallet is a conflict.
+	// Carteira duplicada é um conflito.
 	if _, err := s.Wallets.OpenWallet(ctx, w.PlayerID(), tu.BRL(t, "1.00"), ""); err == nil {
 		t.Fatal("expected conflict for second wallet")
 	}

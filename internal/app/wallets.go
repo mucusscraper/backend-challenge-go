@@ -16,16 +16,16 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/observability"
 )
 
-// Ledger pagination limits.
+// Limites de paginação do ledger.
 const (
 	DefaultLedgerLimit = 50
 	MaxLedgerLimit     = 200
 )
 
-// ErrInvalidCursor reports a malformed pagination cursor.
+// ErrInvalidCursor indica um cursor de paginação malformado.
 var ErrInvalidCursor = errors.New("invalid cursor")
 
-// WalletService implements the wallet use cases (internal service only).
+// WalletService implementa os casos de uso de carteira (somente serviço interno).
 type WalletService struct {
 	uow     UnitOfWork
 	clock   Clock
@@ -34,16 +34,16 @@ type WalletService struct {
 	metrics *observability.Metrics
 }
 
-// NewWalletService builds the service.
+// NewWalletService constrói o serviço.
 func NewWalletService(uow UnitOfWork, clock Clock, newID domain.IDGenerator, log *slog.Logger,
 	metrics *observability.Metrics) *WalletService {
 	return &WalletService{uow: uow, clock: clock, newID: newID, log: log, metrics: metrics}
 }
 
-// OpenWallet creates a wallet. For a positive initial balance the OPENING
-// transaction (PROCESSED), its CREDIT ledger entry and the outbox events
-// WagerTransactionProcessed + WalletBalanceChanged are committed together
-// with the wallet. A second wallet for the same (player, currency) returns
+// OpenWallet cria uma carteira. Para um saldo inicial positivo, a transação
+// OPENING (PROCESSED), sua entrada CREDIT no ledger e os eventos do outbox
+// WagerTransactionProcessed + WalletBalanceChanged são commitados juntos com
+// a carteira. Uma segunda carteira para o mesmo (player, currency) retorna
 // ErrWalletAlreadyExists.
 func (s *WalletService) OpenWallet(ctx context.Context, playerID uuid.UUID, initial money.Money, correlationID string) (*domain.Wallet, error) {
 	opening, err := domain.OpenWallet(domain.OpenWalletParams{
@@ -82,7 +82,7 @@ func (s *WalletService) OpenWallet(ctx context.Context, playerID uuid.UUID, init
 	return opening.Wallet, nil
 }
 
-// GetWallet returns a wallet.
+// GetWallet retorna uma carteira.
 func (s *WalletService) GetWallet(ctx context.Context, id uuid.UUID) (*domain.Wallet, error) {
 	var w *domain.Wallet
 	err := s.uow.Run(ctx, func(ctx context.Context, tx Tx) error {
@@ -93,14 +93,14 @@ func (s *WalletService) GetWallet(ctx context.Context, id uuid.UUID) (*domain.Wa
 	return w, err
 }
 
-// LedgerPage is one page of ledger entries.
+// LedgerPage é uma página de entradas do ledger.
 type LedgerPage struct {
 	Entries []domain.LedgerEntry
-	// NextCursor is empty on the last page.
+	// NextCursor é vazio na última página.
 	NextCursor string
 }
 
-// Ledger lists entries in stable (seq) order using an opaque cursor.
+// Ledger lista entradas em ordem estável (seq) usando um cursor opaco.
 func (s *WalletService) Ledger(ctx context.Context, walletID uuid.UUID, cursor string, limit int) (LedgerPage, error) {
 	after, err := DecodeCursor(cursor)
 	if err != nil {
@@ -137,12 +137,12 @@ func (s *WalletService) Ledger(ctx context.Context, walletID uuid.UUID, cursor s
 	return page, err
 }
 
-// EncodeCursor makes an opaque cursor from a ledger sequence.
+// EncodeCursor cria um cursor opaco a partir de uma sequência do ledger.
 func EncodeCursor(seq int64) string {
 	return base64.RawURLEncoding.EncodeToString([]byte("v1:" + strconv.FormatInt(seq, 10)))
 }
 
-// DecodeCursor parses a cursor produced by EncodeCursor ("" = start).
+// DecodeCursor analisa um cursor produzido por EncodeCursor ("" = início).
 func DecodeCursor(cursor string) (int64, error) {
 	if cursor == "" {
 		return 0, nil
@@ -162,22 +162,23 @@ func DecodeCursor(cursor string) (int64, error) {
 	return seq, nil
 }
 
-// Reconciliation is the result of comparing a wallet's stored balance with
-// the balance rebuilt from its ledger.
+// Reconciliation é o resultado da comparação do saldo armazenado de uma
+// carteira com o saldo reconstruído a partir do seu ledger.
 type Reconciliation struct {
 	WalletID          uuid.UUID
 	StoredBalance     money.Money
 	CalculatedBalance money.Money
-	// Difference = stored - calculated.
+	// Difference = armazenado - calculado.
 	Difference     money.Money
 	Consistent     bool
 	CheckedEntries int64
 }
 
-// Reconcile rebuilds the balance from the ledger (OPENING included) inside
-// a REPEATABLE READ read-only snapshot, so the wallet row and the ledger
-// are observed at the same instant. It never modifies the balance; a
-// divergence is reported in the result, logged and counted in a metric.
+// Reconcile reconstrói o saldo a partir do ledger (OPENING incluído) dentro
+// de um snapshot REPEATABLE READ somente leitura, de modo que a linha da
+// carteira e o ledger são observados no mesmo instante. Nunca modifica o saldo;
+// uma divergência é reportada no resultado, registrada em log e contada em
+// uma métrica.
 func (s *WalletService) Reconcile(ctx context.Context, walletID uuid.UUID) (Reconciliation, error) {
 	var rec Reconciliation
 	err := s.uow.Snapshot(ctx, func(ctx context.Context, tx Tx) error {

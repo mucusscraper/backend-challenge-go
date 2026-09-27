@@ -1,14 +1,14 @@
-// Package httpapi exposes the REST API with net/http (Go 1.22 routing
-// patterns). Handlers only translate HTTP <-> use cases; all business rules
-// live in the domain and app packages.
+// Package httpapi expõe a API REST com net/http (padrões de roteamento do Go 1.22).
+// Os handlers apenas traduzem HTTP <-> casos de uso; todas as regras de negócio
+// vivem nos pacotes domain e app.
 //
-// HTTP status contract (see README for bodies):
+// Contrato de status HTTP (ver README para os corpos):
 //
-//	200 PROCESSED (new or replay)          202 PENDING / PENDING_REFERENCE
-//	201 wallet created                     400 invalid input / missing key
-//	401 missing, invalid or expired token  403 authenticated but not allowed
-//	404 unknown (or not visible) resource  409 idempotency / uniqueness conflict
-//	422 business rejection (REJECTED)      503 transient unavailability (Retry-After)
+//	200 PROCESSED (novo ou replay)         202 PENDING / PENDING_REFERENCE
+//	201 carteira criada                    400 entrada inválida / chave ausente
+//	401 token ausente, inválido ou expirado 403 autenticado mas sem permissão
+//	404 recurso desconhecido (ou invisível) 409 conflito de idempotência / unicidade
+//	422 rejeição de negócio (REJECTED)     503 indisponibilidade transiente (Retry-After)
 package httpapi
 
 import (
@@ -29,10 +29,10 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/domain/money"
 )
 
-// maxBodyBytes bounds request bodies.
+// maxBodyBytes limita o tamanho dos corpos das requisições.
 const maxBodyBytes = 64 << 10
 
-// Stable API error codes.
+// Códigos de erro estáveis da API.
 const (
 	codeInvalidJSON           = "INVALID_JSON"
 	codeValidation            = "VALIDATION_ERROR"
@@ -49,19 +49,19 @@ const (
 	codeInvalidCursor         = "INVALID_CURSOR"
 )
 
-// Handlers holds the use cases used by the HTTP layer.
+// Handlers mantém os casos de uso usados pela camada HTTP.
 type Handlers struct {
 	wagering *app.WageringService
 	wallets  *app.WalletService
 	log      *slog.Logger
 }
 
-// NewHandlers builds the handlers.
+// NewHandlers constrói os handlers.
 func NewHandlers(wagering *app.WageringService, wallets *app.WalletService, log *slog.Logger) *Handlers {
 	return &Handlers{wagering: wagering, wallets: wallets, log: log}
 }
 
-// --- wallets (internal service only) -------------------------------------------
+// --- carteiras (somente serviço interno) ----------------------------------------
 
 func (h *Handlers) openWallet(w http.ResponseWriter, r *http.Request) {
 	var req openWalletRequest
@@ -134,7 +134,7 @@ func (h *Handlers) reconcile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toReconciliationResponse(rec))
 }
 
-// --- wagering ------------------------------------------------------------------
+// --- apostas -------------------------------------------------------------------
 
 func (h *Handlers) submitTransaction(w http.ResponseWriter, r *http.Request) {
 	p, _ := auth.FromContext(r.Context())
@@ -147,8 +147,8 @@ func (h *Handlers) submitTransaction(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	// The authenticated identity determines the provider: a provider can
-	// only submit (and replay) operations on its own behalf.
+	// A identidade autenticada determina o provedor: um provedor só pode
+	// submeter (e repetir) operações em seu próprio nome.
 	if body.ProviderID != p.ProviderID {
 		writeError(w, r, http.StatusForbidden, codeForbidden, "providerId does not match the authenticated provider")
 		return
@@ -170,7 +170,7 @@ func (h *Handlers) submitTransaction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, statusFor(res.Transaction.Status()), toSubmitResponse(res.Transaction, res.Replay))
 }
 
-// statusFor maps a transaction status to the HTTP status of the submit.
+// statusFor mapeia um status de transação para o status HTTP da submissão.
 func statusFor(s domain.Status) int {
 	switch s {
 	case domain.StatusProcessed:
@@ -195,9 +195,9 @@ func (h *Handlers) getTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, _ := auth.FromContext(r.Context())
-	// Internal OPENING transactions have no provider: only the wallet
-	// operator sees them. Another provider's transaction is reported as
-	// 404 so its existence is not disclosed.
+	// Transações OPENING internas não têm provedor: apenas o operador da
+	// carteira as vê. A transação de outro provedor é reportada como 404
+	// para que sua existência não seja revelada.
 	if !p.IsWalletOperator() && (t.ProviderID() == "" || !p.CanAccessProvider(t.ProviderID())) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "transaction not found")
 		return
@@ -220,9 +220,9 @@ func (h *Handlers) getProviderTransaction(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, toTransactionResponse(t))
 }
 
-// --- helpers -------------------------------------------------------------------
+// --- auxiliares ----------------------------------------------------------------
 
-// writeAppError maps application/domain errors to HTTP responses.
+// writeAppError mapeia erros de aplicação/domínio para respostas HTTP.
 func (h *Handlers) writeAppError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, app.ErrWalletNotFound):
@@ -249,8 +249,8 @@ func (h *Handlers) writeAppError(w http.ResponseWriter, r *http.Request, err err
 	}
 }
 
-// decodeJSON strictly decodes the body (unknown fields rejected, single
-// JSON value, bounded size).
+// decodeJSON decodifica o corpo de forma estrita (campos desconhecidos rejeitados,
+// valor JSON único, tamanho limitado).
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	if err != nil {

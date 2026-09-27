@@ -9,15 +9,15 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/domain/money"
 )
 
-// Wallet is the root of the financial aggregate. Its balance can only change
-// through Debit and Credit, which always return the matching LedgerEntry; the
-// application layer persists both in the same SQL transaction.
+// Wallet é a raiz do agregado financeiro. Seu saldo só pode mudar por meio
+// de Debit e Credit, que sempre retornam a LedgerEntry correspondente; a
+// camada de aplicação persiste ambos na mesma transação SQL.
 //
-// Concurrency: the aggregate carries a version. It starts at 1 when the
-// wallet is opened and is incremented exactly once per balance change. The
-// repository updates the row with "WHERE version = <loaded version>" while
-// holding a row lock (SELECT ... FOR UPDATE), so a concurrent writer can
-// never overwrite a committed change (no lost update).
+// Concorrência: o agregado carrega uma versão. Começa em 1 quando a
+// carteira é aberta e é incrementada exatamente uma vez por mudança de saldo. O
+// repositório atualiza a linha com "WHERE version = <versão carregada>" enquanto
+// mantém um row lock (SELECT ... FOR UPDATE), de modo que um escritor concorrente
+// nunca pode sobrescrever uma mudança commitada (sem lost update).
 type Wallet struct {
 	id        uuid.UUID
 	playerID  uuid.UUID
@@ -28,11 +28,11 @@ type Wallet struct {
 	updatedAt time.Time
 }
 
-// InitialWalletVersion is the version of a freshly opened wallet.
+// InitialWalletVersion é a versão de uma carteira recém-aberta.
 const InitialWalletVersion int64 = 1
 
-// WalletSnapshot is the full persisted state of a wallet, used to rehydrate
-// it from storage.
+// WalletSnapshot é o estado completo persistido de uma carteira, usado para
+// reidratá-la a partir do armazenamento.
 type WalletSnapshot struct {
 	ID        uuid.UUID
 	PlayerID  uuid.UUID
@@ -42,8 +42,8 @@ type WalletSnapshot struct {
 	UpdatedAt time.Time
 }
 
-// RehydrateWallet rebuilds a wallet from persisted state. It validates the
-// snapshot but does not replay any movement nor emit events.
+// RehydrateWallet reconstrói uma carteira a partir do estado persistido.
+// Valida o snapshot mas não repete nenhum movimento nem emite eventos.
 func RehydrateWallet(s WalletSnapshot) (*Wallet, error) {
 	if s.ID == uuid.Nil || s.PlayerID == uuid.Nil {
 		return nil, invalidArg("wallet identifiers are required")
@@ -71,9 +71,9 @@ func RehydrateWallet(s WalletSnapshot) (*Wallet, error) {
 	}, nil
 }
 
-// newWallet creates a brand new wallet at version 1. It is unexported
-// because wallets are only created through OpenWallet, which also produces
-// the OPENING transaction, ledger entry and events when needed.
+// newWallet cria uma carteira nova na versão 1. Não é exportada porque
+// carteiras são criadas apenas por OpenWallet, que também produz a transação
+// OPENING, a entrada do ledger e os eventos quando necessário.
 func newWallet(id, playerID uuid.UUID, initial money.Money, now time.Time) (*Wallet, error) {
 	if id == uuid.Nil || playerID == uuid.Nil {
 		return nil, invalidArg("wallet identifiers are required")
@@ -99,28 +99,28 @@ func newWallet(id, playerID uuid.UUID, initial money.Money, now time.Time) (*Wal
 	}, nil
 }
 
-// ID returns the wallet identifier.
+// ID retorna o identificador da carteira.
 func (w *Wallet) ID() uuid.UUID { return w.id }
 
-// PlayerID returns the owner of the wallet.
+// PlayerID retorna o dono da carteira.
 func (w *Wallet) PlayerID() uuid.UUID { return w.playerID }
 
-// Currency returns the wallet currency.
+// Currency retorna a moeda da carteira.
 func (w *Wallet) Currency() money.Currency { return w.currency }
 
-// Balance returns the current balance.
+// Balance retorna o saldo atual.
 func (w *Wallet) Balance() money.Money { return w.balance }
 
-// Version returns the optimistic-concurrency version.
+// Version retorna a versão para controle de concorrência otimista.
 func (w *Wallet) Version() int64 { return w.version }
 
-// CreatedAt returns the creation instant (UTC).
+// CreatedAt retorna o instante de criação (UTC).
 func (w *Wallet) CreatedAt() time.Time { return w.createdAt }
 
-// UpdatedAt returns the instant of the last balance change (UTC).
+// UpdatedAt retorna o instante da última mudança de saldo (UTC).
 func (w *Wallet) UpdatedAt() time.Time { return w.updatedAt }
 
-// Movement describes a balance change requested on the wallet.
+// Movement descreve uma mudança de saldo solicitada na carteira.
 type Movement struct {
 	EntryID       uuid.UUID
 	TransactionID uuid.UUID
@@ -147,9 +147,9 @@ func (w *Wallet) validateMovement(m Movement) error {
 	return nil
 }
 
-// Debit removes amount from the balance and returns the ledger entry. It
-// returns a *RejectionError with FailureInsufficientFunds when the balance
-// would become negative; the wallet is left untouched on any error.
+// Debit remove o valor do saldo e retorna a entrada do ledger. Retorna um
+// *RejectionError com FailureInsufficientFunds quando o saldo ficaria negativo;
+// a carteira é deixada intocada em qualquer erro.
 func (w *Wallet) Debit(m Movement) (LedgerEntry, error) {
 	if err := w.validateMovement(m); err != nil {
 		return LedgerEntry{}, err
@@ -168,7 +168,7 @@ func (w *Wallet) Debit(m Movement) (LedgerEntry, error) {
 	return w.apply(DirectionDebit, m, after)
 }
 
-// Credit adds amount to the balance and returns the ledger entry.
+// Credit adiciona o valor ao saldo e retorna a entrada do ledger.
 func (w *Wallet) Credit(m Movement) (LedgerEntry, error) {
 	if err := w.validateMovement(m); err != nil {
 		return LedgerEntry{}, err
@@ -180,8 +180,8 @@ func (w *Wallet) Credit(m Movement) (LedgerEntry, error) {
 	return w.apply(DirectionCredit, m, after)
 }
 
-// apply builds the entry first and only mutates the wallet when the entry
-// is valid, so a failure never leaves a half-applied state.
+// apply constrói a entrada primeiro e só muta a carteira quando a entrada
+// é válida, de modo que uma falha nunca deixa um estado meio aplicado.
 func (w *Wallet) apply(dir Direction, m Movement, after money.Money) (LedgerEntry, error) {
 	entry, err := NewLedgerEntry(LedgerEntryParams{
 		ID:            m.EntryID,

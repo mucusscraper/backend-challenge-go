@@ -10,17 +10,17 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/domain/money"
 )
 
-// moneyDTO is the external money contract. Both fields are JSON strings;
-// a JSON number for "amount" fails decoding, so no float is ever parsed.
+// moneyDTO é o contrato externo de dinheiro. Ambos os campos são strings JSON;
+// um número JSON para "amount" falha na decodificação, portanto nenhum float é analisado.
 type moneyDTO = money.DTO
 
-// openWalletRequest is the body of POST /wallets.
+// openWalletRequest é o corpo de POST /wallets.
 type openWalletRequest struct {
 	PlayerID       string   `json:"playerId"`
 	InitialBalance moneyDTO `json:"initialBalance"`
 }
 
-// walletResponse is returned by POST /wallets and GET /wallets/{id}.
+// walletResponse é retornado por POST /wallets e GET /wallets/{id}.
 type walletResponse struct {
 	ID        string   `json:"id"`
 	PlayerID  string   `json:"playerId"`
@@ -41,7 +41,7 @@ func toWalletResponse(w *domain.Wallet) walletResponse {
 	}
 }
 
-// ledgerEntryResponse is one ledger line.
+// ledgerEntryResponse é uma linha do ledger.
 type ledgerEntryResponse struct {
 	ID            string   `json:"id"`
 	TransactionID string   `json:"transactionId"`
@@ -53,7 +53,7 @@ type ledgerEntryResponse struct {
 	CreatedAt     string   `json:"createdAt"`
 }
 
-// ledgerResponse is returned by GET /wallets/{id}/ledger.
+// ledgerResponse é retornado por GET /wallets/{id}/ledger.
 type ledgerResponse struct {
 	WalletID   string                `json:"walletId"`
 	Entries    []ledgerEntryResponse `json:"entries"`
@@ -81,7 +81,7 @@ func toLedgerResponse(walletID string, p app.LedgerPage) ledgerResponse {
 	return out
 }
 
-// submitRequest is the body of POST /wagering/transactions.
+// submitRequest é o corpo de POST /wagering/transactions.
 type submitRequest struct {
 	ProviderID                     string   `json:"providerId"`
 	ExternalTransactionID          string   `json:"externalTransactionId"`
@@ -110,9 +110,9 @@ func (r submitRequest) toRaw(idempotencyKey string) domain.RawExternalRequest {
 	}
 }
 
-// submitResponse is returned by POST /wagering/transactions. balance is the
-// balance observed when the operation was concluded (not the current one),
-// so replays return exactly the original result.
+// submitResponse é retornado por POST /wagering/transactions. balance é o
+// saldo observado quando a operação foi concluída (não o atual), portanto
+// os replays retornam exatamente o resultado original.
 type submitResponse struct {
 	TransactionID    string    `json:"transactionId"`
 	Status           string    `json:"status"`
@@ -143,7 +143,7 @@ func toSubmitResponse(t *domain.WagerTransaction, replay bool) submitResponse {
 	return out
 }
 
-// transactionResponse is the full view returned by the GET endpoints.
+// transactionResponse é a visão completa retornada pelos endpoints GET.
 type transactionResponse struct {
 	TransactionID                  string    `json:"transactionId"`
 	Origin                         string    `json:"origin"`
@@ -200,7 +200,7 @@ func toTransactionResponse(t *domain.WagerTransaction) transactionResponse {
 	return out
 }
 
-// reconciliationResponse is returned by POST /wallets/{id}/reconciliation.
+// reconciliationResponse é retornado por POST /wallets/{id}/reconciliation.
 type reconciliationResponse struct {
 	WalletID          string   `json:"walletId"`
 	StoredBalance     moneyDTO `json:"storedBalance"`
@@ -221,7 +221,7 @@ func toReconciliationResponse(r app.Reconciliation) reconciliationResponse {
 	}
 }
 
-// errorResponse is the body of every error response.
+// errorResponse é o corpo de toda resposta de erro.
 type errorResponse struct {
 	Error         errorBody `json:"error"`
 	CorrelationID string    `json:"correlationId,omitempty"`

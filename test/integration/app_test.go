@@ -25,7 +25,7 @@ import (
 	tu "github.com/mucusscraper/backend-challenge-go/test/testutil"
 )
 
-// running is an in-process instance of the whole fx application.
+// running é uma instância em processo da aplicação fx completa.
 type running struct {
 	app     *fxtest.App
 	base    string
@@ -118,8 +118,8 @@ func wagerBody(provider string, playerID, walletID any, kind, amount, ext, ref s
 	return b
 }
 
-// TestFxLifecycle starts and stops the full composition and checks that the
-// workers terminated and the resources were released.
+// TestFxLifecycle inicia e para a composição completa e verifica que os
+// workers terminaram e os recursos foram liberados.
 func TestFxLifecycle(t *testing.T) {
 	c := tu.SQSClient(t)
 	q := tu.CreateQueues(t, c, 3, 5*time.Second)
@@ -157,8 +157,8 @@ func TestFxLifecycle(t *testing.T) {
 	}
 }
 
-// TestAuthentication: missing, invalid, tampered and expired tokens are
-// rejected with 401 and no financial effect.
+// TestAuthentication: tokens ausentes, inválidos, adulterados e expirados são
+// rejeitados com 401 e sem efeito financeiro.
 func TestAuthentication(t *testing.T) {
 	c := tu.SQSClient(t)
 	q := tu.CreateQueues(t, c, 3, 5*time.Second)
@@ -185,15 +185,15 @@ func TestAuthentication(t *testing.T) {
 			t.Errorf("%s token: status %d", name, res.status)
 		}
 	}
-	// The wallet is untouched.
+	// A carteira não foi alterada.
 	got := call(t, "GET", r.base+"/wallets/"+w.body["id"].(string), op, nil)
 	if got.body["balance"].(map[string]any)["amount"] != "100.00" || got.body["version"].(float64) != 1 {
 		t.Fatalf("wallet changed: %v", got.body)
 	}
 }
 
-// TestAuthorizationAndProviderIsolation covers roles and provider scoping,
-// including replays and queries.
+// TestAuthorizationAndProviderIsolation cobre roles e escopo por provedor,
+// incluindo replays e consultas.
 func TestAuthorizationAndProviderIsolation(t *testing.T) {
 	c := tu.SQSClient(t)
 	q := tu.CreateQueues(t, c, 3, 5*time.Second)
@@ -205,7 +205,7 @@ func TestAuthorizationAndProviderIsolation(t *testing.T) {
 	pb := tu.Token(t, tu.ProviderB, tu.ProviderBSecret)
 	noRole := tu.Token(t, tu.NoRoleClient, tu.NoRoleClientSecret)
 
-	// Wallet operations are internal only.
+	// Operações de carteira são exclusivas do serviço interno.
 	openBody := map[string]any{"playerId": uuid.NewString(), "initialBalance": map[string]string{"amount": "100.00", "currency": "BRL"}}
 	for name, tok := range map[string]string{"provider": pa, "no-role": noRole} {
 		if res := call(t, "POST", r.base+"/wallets", tok, openBody); res.status != 403 {
@@ -220,7 +220,7 @@ func TestAuthorizationAndProviderIsolation(t *testing.T) {
 	if res := call(t, "POST", r.base+"/wallets/"+walletID+"/reconciliation", pa, nil); res.status != 403 {
 		t.Errorf("provider reconciling: %d", res.status)
 	}
-	// The internal service cannot submit provider operations.
+	// O serviço interno não pode submeter operações de provedor.
 	ext := "iso-" + uuid.NewString()
 	key := "provider-a:" + ext
 	body := wagerBody("provider-a", w.body["playerId"], walletID, "BET", "10.00", ext, "")
@@ -228,46 +228,46 @@ func TestAuthorizationAndProviderIsolation(t *testing.T) {
 		t.Errorf("operator submitting: %d", res.status)
 	}
 
-	// Provider A submits its bet.
+	// Provedor A submete sua aposta.
 	created := call(t, "POST", r.base+"/wagering/transactions", pa, body, "Idempotency-Key", key)
 	if created.status != 200 || created.body["status"] != "PROCESSED" || created.body["idempotentReplay"] != false {
 		t.Fatalf("provider A submit: %d %v", created.status, created.body)
 	}
 	txID := created.body["transactionId"].(string)
 
-	// Provider B cannot submit (or replay) on behalf of provider A.
+	// Provedor B não pode submeter (nem replay) em nome do provedor A.
 	if res := call(t, "POST", r.base+"/wagering/transactions", pb, body, "Idempotency-Key", key); res.status != 403 {
 		t.Errorf("provider B replaying A: %d", res.status)
 	}
-	// Provider B cannot read A's transaction by id nor by external id.
+	// Provedor B não pode ler a transação de A por id nem por id externo.
 	if res := call(t, "GET", r.base+"/wagering/transactions/"+txID, pb, nil); res.status != 404 {
 		t.Errorf("provider B reading A by id: %d", res.status)
 	}
 	if res := call(t, "GET", r.base+"/providers/provider-a/wagering/transactions/"+ext, pb, nil); res.status != 403 {
 		t.Errorf("provider B reading A by external id: %d", res.status)
 	}
-	// Provider B using its own namespace does not see A's operation either.
+	// Provedor B usando seu próprio namespace também não vê a operação de A.
 	if res := call(t, "GET", r.base+"/providers/provider-b/wagering/transactions/"+ext, pb, nil); res.status != 404 {
 		t.Errorf("provider B own namespace: %d", res.status)
 	}
-	// Provider A and the operator can read it.
+	// Provedor A e o operador podem ler.
 	if res := call(t, "GET", r.base+"/wagering/transactions/"+txID, pa, nil); res.status != 200 {
 		t.Errorf("provider A reading own: %d", res.status)
 	}
 	if res := call(t, "GET", r.base+"/providers/provider-a/wagering/transactions/"+ext, op, nil); res.status != 200 {
 		t.Errorf("operator reading: %d", res.status)
 	}
-	// Provider A replays: original result, no new effect.
+	// Provedor A faz replay: resultado original, sem novo efeito.
 	replay := call(t, "POST", r.base+"/wagering/transactions", pa, body, "Idempotency-Key", key)
 	if replay.status != 200 || replay.body["idempotentReplay"] != true || replay.body["transactionId"] != txID {
 		t.Fatalf("replay: %d %v", replay.status, replay.body)
 	}
-	// Conflicting reuse of the key.
+	// Reutilização conflitante da chave.
 	body2 := wagerBody("provider-a", w.body["playerId"], walletID, "BET", "11.00", ext, "")
 	if res := call(t, "POST", r.base+"/wagering/transactions", pa, body2, "Idempotency-Key", key); res.status != 409 {
 		t.Errorf("key conflict: %d", res.status)
 	}
-	// Missing Idempotency-Key and invalid money are 400.
+	// Idempotency-Key ausente e valor inválido resultam em 400.
 	if res := call(t, "POST", r.base+"/wagering/transactions", pa, body); res.status != 400 {
 		t.Errorf("missing key: %d", res.status)
 	}
@@ -279,13 +279,13 @@ func TestAuthorizationAndProviderIsolation(t *testing.T) {
 	if res := call(t, "POST", r.base+"/wagering/transactions", pa, opening, "Idempotency-Key", "op"); res.status != 400 {
 		t.Errorf("OPENING via HTTP: %d", res.status)
 	}
-	// Business rejection is 422 with a failure code.
+	// Rejeição de negócio retorna 422 com código de falha.
 	big := wagerBody("provider-a", w.body["playerId"], walletID, "BET", "1000.00", "big-"+uuid.NewString(), "")
 	res := call(t, "POST", r.base+"/wagering/transactions", pa, big, "Idempotency-Key", "big-"+uuid.NewString())
 	if res.status != 422 || res.body["failureCode"] != "INSUFFICIENT_FUNDS" {
 		t.Errorf("rejection: %d %v", res.status, res.body)
 	}
-	// Only the single authorised debit happened.
+	// Apenas o único débito autorizado ocorreu.
 	wal := call(t, "GET", r.base+"/wallets/"+walletID, op, nil)
 	if wal.body["balance"].(map[string]any)["amount"] != "90.00" {
 		t.Fatalf("balance %v", wal.body)
@@ -304,9 +304,9 @@ func TestAuthorizationAndProviderIsolation(t *testing.T) {
 	}
 }
 
-// TestRestartPreservesPendingAndIdempotency: a REFUND waits for its BET in
-// instance A; A stops; the BET arrives; a new instance B resumes the
-// refund. Replays keep returning the persisted result across restarts.
+// TestRestartPreservesPendingAndIdempotency: um REFUND aguarda seu BET na
+// instância A; A para; o BET chega; uma nova instância B retoma o
+// reembolso. Replays continuam retornando o resultado persistido após reinicializações.
 func TestRestartPreservesPendingAndIdempotency(t *testing.T) {
 	c := tu.SQSClient(t)
 	q := tu.CreateQueues(t, c, 3, 5*time.Second)
@@ -327,7 +327,7 @@ func TestRestartPreservesPendingAndIdempotency(t *testing.T) {
 	}
 	a.app.RequireStop()
 
-	// The bet arrives while no instance resolves references.
+	// A aposta chega enquanto nenhuma instância resolve referências.
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
 	wid, _ := uuid.Parse(walletID)
 	wallet, _ := s.Wallets.GetWallet(context.Background(), wid)

@@ -1,8 +1,8 @@
 //go:build integration || e2e
 
-// Package testutil contains helpers shared by the integration and e2e test
-// suites. They talk to REAL infrastructure (PostgreSQL, Keycloak, LocalStack)
-// started with docker compose; nothing is mocked.
+// Package testutil contém helpers compartilhados pelas suítes de testes de
+// integração e e2e. Eles falam com INFRAESTRUTURA REAL (PostgreSQL, Keycloak,
+// LocalStack) iniciada com docker compose; nada é mockado.
 package testutil
 
 import (
@@ -34,7 +34,7 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/postgres"
 )
 
-// Env returns an environment variable or a default matching docker compose.
+// Env retorna uma variável de ambiente ou um padrão compatível com docker compose.
 func Env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -42,7 +42,7 @@ func Env(key, def string) string {
 	return def
 }
 
-// Connection settings (overridable through the environment).
+// Configurações de conexão (substituíveis por variáveis de ambiente).
 var (
 	OwnerDSN     = Env("TEST_MIGRATION_DATABASE_URL", "postgres://wagering_owner:wagering_owner@localhost:55432/wagering?sslmode=disable")
 	AppDSN       = Env("TEST_DATABASE_URL", "postgres://wallet_app:wallet_app@localhost:55432/wagering?sslmode=disable")
@@ -54,7 +54,7 @@ var (
 	migrateError error
 )
 
-// Migrate applies the migrations once per test binary.
+// Migrate aplica as migrações uma vez por binário de teste.
 func Migrate(t testing.TB) {
 	t.Helper()
 	migrateOnce.Do(func() {
@@ -71,7 +71,7 @@ func Migrate(t testing.TB) {
 	}
 }
 
-// Logger returns a quiet logger for tests (set TEST_LOG=1 for output).
+// Logger retorna um logger silencioso para testes (defina TEST_LOG=1 para saída).
 func Logger() *slog.Logger {
 	if os.Getenv("TEST_LOG") != "" {
 		return observability.NewLogger("debug", "test")
@@ -79,7 +79,7 @@ func Logger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// Pool opens a pgx pool with the restricted runtime role (like production).
+// Pool abre um pool pgx com o role restrito de runtime (como em produção).
 func Pool(t testing.TB) *pgxpool.Pool {
 	t.Helper()
 	Migrate(t)
@@ -94,7 +94,7 @@ func Pool(t testing.TB) *pgxpool.Pool {
 	return pool
 }
 
-// OwnerPool opens a pool with the owner role (for tampering tests).
+// OwnerPool abre um pool com o role owner (para testes de adulteração).
 func OwnerPool(t testing.TB) *pgxpool.Pool {
 	t.Helper()
 	Migrate(t)
@@ -106,7 +106,7 @@ func OwnerPool(t testing.TB) *pgxpool.Pool {
 	return pool
 }
 
-// Services bundles the use cases wired on a real database.
+// Services agrupa os casos de uso conectados a um banco de dados real.
 type Services struct {
 	Pool     *pgxpool.Pool
 	UoW      *postgres.UnitOfWork
@@ -115,8 +115,8 @@ type Services struct {
 	Metrics  *observability.Metrics
 }
 
-// NewServices wires the use cases like production does. Each call has its
-// own pool, which is how tests simulate independent instances in-process.
+// NewServices conecta os casos de uso como em produção. Cada chamada tem seu
+// próprio pool, simulando instâncias independentes no mesmo processo.
 func NewServices(t testing.TB, policy domain.ReferencePolicy) *Services {
 	t.Helper()
 	pool := Pool(t)
@@ -132,7 +132,7 @@ func NewServices(t testing.TB, policy domain.ReferencePolicy) *Services {
 	}
 }
 
-// BRL parses a BRL amount.
+// BRL analisa um valor em BRL.
 func BRL(t testing.TB, amount string) money.Money {
 	t.Helper()
 	m, err := money.Parse(amount, "BRL")
@@ -142,7 +142,7 @@ func BRL(t testing.TB, amount string) money.Money {
 	return m
 }
 
-// OpenWallet opens a wallet for a fresh player.
+// OpenWallet abre uma carteira para um novo jogador.
 func OpenWallet(t testing.TB, s *Services, initial string) *domain.Wallet {
 	t.Helper()
 	w, err := s.Wallets.OpenWallet(context.Background(), uuid.Must(uuid.NewV7()), BRL(t, initial), "test")
@@ -152,7 +152,7 @@ func OpenWallet(t testing.TB, s *Services, initial string) *domain.Wallet {
 	return w
 }
 
-// Req builds a validated external request.
+// Req constrói uma requisição externa validada.
 func Req(t testing.TB, provider string, w *domain.Wallet, kind domain.Kind, amount, extID string, ref string) domain.ExternalRequest {
 	t.Helper()
 	r, err := domain.NewExternalRequest(RawReq(provider, w, kind, amount, extID, ref))
@@ -162,7 +162,7 @@ func Req(t testing.TB, provider string, w *domain.Wallet, kind domain.Kind, amou
 	return r
 }
 
-// RawReq builds a raw request with key "{provider}:{extID}".
+// RawReq constrói uma requisição bruta com chave "{provider}:{extID}".
 func RawReq(provider string, w *domain.Wallet, kind domain.Kind, amount, extID, ref string) domain.RawExternalRequest {
 	return domain.RawExternalRequest{
 		ProviderID:                     provider,
@@ -179,7 +179,7 @@ func RawReq(provider string, w *domain.Wallet, kind domain.Kind, amount, extID, 
 	}
 }
 
-// Submit is a shortcut for an HTTP-like submission.
+// Submit é um atalho para uma submissão similar a HTTP.
 func Submit(t testing.TB, s *Services, req domain.ExternalRequest) app.SubmitResult {
 	t.Helper()
 	res, err := s.Wagering.Submit(context.Background(), app.SubmitCommand{Request: req, CorrelationID: "test", Source: "test"})
@@ -189,8 +189,8 @@ func Submit(t testing.TB, s *Services, req domain.ExternalRequest) app.SubmitRes
 	return res
 }
 
-// LedgerStats returns (entries, credits-debits in minor units, debit count)
-// computed directly in SQL, independent from the application code.
+// LedgerStats retorna (entradas, créditos-débitos em unidades menores, contagem de débitos)
+// calculados diretamente em SQL, independentemente do código da aplicação.
 func LedgerStats(t testing.TB, pool *pgxpool.Pool, walletID uuid.UUID) (entries int64, net int64, debits int64) {
 	t.Helper()
 	err := pool.QueryRow(context.Background(), `
@@ -204,7 +204,7 @@ func LedgerStats(t testing.TB, pool *pgxpool.Pool, walletID uuid.UUID) (entries 
 	return
 }
 
-// StoredBalance reads the wallet balance (minor units) and version.
+// StoredBalance lê o saldo da carteira (unidades menores) e a versão.
 func StoredBalance(t testing.TB, pool *pgxpool.Pool, walletID uuid.UUID) (balance, version int64) {
 	t.Helper()
 	if err := pool.QueryRow(context.Background(),
@@ -214,7 +214,7 @@ func StoredBalance(t testing.TB, pool *pgxpool.Pool, walletID uuid.UUID) (balanc
 	return
 }
 
-// AssertConsistent checks stored balance == sum(credits) - sum(debits).
+// AssertConsistent verifica se saldo armazenado == soma(créditos) - soma(débitos).
 func AssertConsistent(t testing.TB, pool *pgxpool.Pool, walletID uuid.UUID) {
 	t.Helper()
 	bal, _ := StoredBalance(t, pool, walletID)
@@ -226,7 +226,7 @@ func AssertConsistent(t testing.TB, pool *pgxpool.Pool, walletID uuid.UUID) {
 
 // --- SQS -------------------------------------------------------------------------
 
-// SQSClient returns a client for LocalStack.
+// SQSClient retorna um cliente para o LocalStack.
 func SQSClient(t testing.TB) *sqs.Client {
 	t.Helper()
 	c, err := messaging.NewClient(config.AWSConfig{
@@ -238,15 +238,15 @@ func SQSClient(t testing.TB) *sqs.Client {
 	return c
 }
 
-// TestQueues are isolated queues created for one test.
+// TestQueues são filas isoladas criadas para um teste.
 type TestQueues struct {
 	Config config.SQSConfig
 	Queues *messaging.Queues
 }
 
-// CreateQueues provisions an isolated inbound FIFO queue with its DLQ
-// (redrive after maxReceive deliveries) and an events FIFO queue, so tests
-// do not interfere with the instances started by docker compose.
+// CreateQueues provisiona uma fila FIFO de entrada isolada com sua DLQ
+// (redrive após maxReceive entregas) e uma fila FIFO de eventos, para que os
+// testes não interfiram nas instâncias iniciadas pelo docker compose.
 func CreateQueues(t testing.TB, c *sqs.Client, maxReceive int, visibility time.Duration) TestQueues {
 	t.Helper()
 	ctx := context.Background()
@@ -285,7 +285,7 @@ func CreateQueues(t testing.TB, c *sqs.Client, maxReceive int, visibility time.D
 	return TestQueues{Config: cfg, Queues: q}
 }
 
-// InboundBody renders a WagerTransactionRequested message body.
+// InboundBody renderiza um corpo de mensagem WagerTransactionRequested.
 func InboundBody(messageID string, raw domain.RawExternalRequest) string {
 	data := map[string]any{
 		"providerId":            raw.ProviderID,
@@ -308,13 +308,13 @@ func InboundBody(messageID string, raw domain.RawExternalRequest) string {
 	return string(b)
 }
 
-// SendInbound sends a message with group = walletId, dedup = messageId.
+// SendInbound envia uma mensagem com group = walletId, dedup = messageId.
 func SendInbound(t testing.TB, c *sqs.Client, queueURL, messageID string, raw domain.RawExternalRequest) {
 	t.Helper()
 	SendRaw(t, c, queueURL, raw.WalletID, messageID, InboundBody(messageID, raw))
 }
 
-// SendRaw sends an arbitrary body.
+// SendRaw envia um corpo arbitrário.
 func SendRaw(t testing.TB, c *sqs.Client, queueURL, group, dedup, body string) {
 	t.Helper()
 	_, err := c.SendMessage(context.Background(), &sqs.SendMessageInput{
@@ -326,7 +326,7 @@ func SendRaw(t testing.TB, c *sqs.Client, queueURL, group, dedup, body string) {
 	}
 }
 
-// CountMessages drains a queue (short polling) and returns the bodies.
+// CountMessages drena uma fila (short polling) e retorna os corpos.
 func CountMessages(t testing.TB, c *sqs.Client, queueURL string, wait time.Duration) []string {
 	t.Helper()
 	var bodies []string
@@ -347,7 +347,7 @@ func CountMessages(t testing.TB, c *sqs.Client, queueURL string, wait time.Durat
 
 // --- Keycloak --------------------------------------------------------------------
 
-// Token obtains an access token with the client_credentials grant.
+// Token obtém um token de acesso com o grant client_credentials.
 func Token(t testing.TB, clientID, secret string) string {
 	t.Helper()
 	form := url.Values{"grant_type": {"client_credentials"}, "client_id": {clientID}, "client_secret": {secret}}
@@ -374,7 +374,7 @@ func Token(t testing.TB, clientID, secret string) string {
 	return ""
 }
 
-// Well-known test identities provisioned by deploy/keycloak/realm-wagering.json.
+// Identidades de teste bem conhecidas provisionadas por deploy/keycloak/realm-wagering.json.
 const (
 	ProviderA          = "provider-a"
 	ProviderASecret    = "provider-a-secret"

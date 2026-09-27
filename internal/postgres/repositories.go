@@ -15,9 +15,9 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/domain/money"
 )
 
-// Money mapping: every amount is stored as BIGINT minor units plus a
-// CHAR(3) currency column; conversion goes through money.FromUnits, so no
-// float is ever involved.
+// Mapeamento de Money: todo valor é armazenado como BIGINT de unidades menores
+// mais uma coluna CHAR(3) de moeda; a conversão passa por money.FromUnits,
+// portanto nenhum float é envolvido.
 
 // --- wallets -----------------------------------------------------------------
 
@@ -66,8 +66,8 @@ func (r walletRepo) Get(ctx context.Context, id uuid.UUID) (*domain.Wallet, erro
 	return scanWallet(r.q.QueryRow(ctx, `SELECT `+walletColumns+` FROM wallets WHERE id = $1`, id))
 }
 
-// GetForUpdate takes the per-wallet row lock. Other wallets are unaffected,
-// so independent wallets progress in parallel (no global lock).
+// GetForUpdate adquire o lock de linha por carteira. Outras carteiras não são
+// afetadas, portanto carteiras independentes progridem em paralelo (sem lock global).
 func (r walletRepo) GetForUpdate(ctx context.Context, id uuid.UUID) (*domain.Wallet, error) {
 	return scanWallet(r.q.QueryRow(ctx, `SELECT `+walletColumns+` FROM wallets WHERE id = $1 FOR UPDATE`, id))
 }
@@ -76,16 +76,16 @@ func (r walletRepo) TryGetForUpdate(ctx context.Context, id uuid.UUID) (*domain.
 	w, err := scanWallet(r.q.QueryRow(ctx,
 		`SELECT `+walletColumns+` FROM wallets WHERE id = $1 FOR UPDATE SKIP LOCKED`, id))
 	if errors.Is(err, app.ErrWalletNotFound) {
-		// Either locked by someone else or missing; the caller retries later.
+		// Bloqueada por outra instância ou ausente; o chamador tenta novamente depois.
 		return nil, nil
 	}
 	return w, err
 }
 
-// UpdateBalance is a compare-and-set on the version. Under the row lock it
-// always matches; the condition is a second, independent guard against lost
-// updates (and the version trigger + UNIQUE(wallet_id, wallet_version) on
-// the ledger are the third).
+// UpdateBalance é um compare-and-set na versão. Sob o lock de linha ela
+// sempre corresponde; a condição é uma segunda guarda independente contra
+// lost updates (o trigger de versão + UNIQUE(wallet_id, wallet_version) no
+// ledger são a terceira).
 func (r walletRepo) UpdateBalance(ctx context.Context, w *domain.Wallet, expectedVersion int64) error {
 	tag, err := r.q.Exec(ctx, `
 		UPDATE wallets SET balance_minor = $2, version = $3, updated_at = $4
@@ -353,8 +353,8 @@ func (r ledgerRepo) List(ctx context.Context, walletID uuid.UUID, afterSeq int64
 	return out, rows.Err()
 }
 
-// Totals sums with NUMERIC to avoid BIGINT overflow in the aggregate; the
-// result is converted back and checked to fit int64.
+// Totals soma com NUMERIC para evitar overflow de BIGINT no agregado; o
+// resultado é convertido de volta e verificado para caber em int64.
 func (r ledgerRepo) Totals(ctx context.Context, walletID uuid.UUID) (app.LedgerTotals, error) {
 	var t app.LedgerTotals
 	err := r.q.QueryRow(ctx, `
@@ -369,7 +369,7 @@ func (r ledgerRepo) Totals(ctx context.Context, walletID uuid.UUID) (app.LedgerT
 
 type outboxRepo struct{ q querier }
 
-// Append stores each event's full envelope as an immutable JSON snapshot.
+// Append armazena o envelope completo de cada evento como um snapshot JSON imutável.
 func (r outboxRepo) Append(ctx context.Context, events ...domain.Event) error {
 	for _, e := range events {
 		payload, err := json.Marshal(e)

@@ -22,9 +22,9 @@ func submit(s *tu.Services, req domain.ExternalRequest) (app.SubmitResult, error
 	return s.Wagering.Submit(context.Background(), app.SubmitCommand{Request: req, CorrelationID: "it", Source: "test"})
 }
 
-// instances simulates N independent service instances: each one has its
-// own connection pool and its own service objects (no shared memory
-// coordination). Cross-process runs are covered by the e2e suite.
+// instances simula N instâncias independentes do serviço: cada uma tem seu
+// próprio pool de conexões e seus próprios objetos de serviço (sem coordenação
+// por memória compartilhada). Execuções entre processos são cobertas pela suíte e2e.
 func instances(t *testing.T, n int, policy domain.ReferencePolicy) []*tu.Services {
 	out := make([]*tu.Services, n)
 	for i := range out {
@@ -33,8 +33,8 @@ func instances(t *testing.T, n int, policy domain.ReferencePolicy) []*tu.Service
 	return out
 }
 
-// TestSameBetFiftyTimesInParallel: 50 concurrent deliveries of the same
-// operation produce exactly one debit; 49 are idempotent replays.
+// TestSameBetFiftyTimesInParallel: 50 entregas concorrentes da mesma
+// operação produzem exatamente um débito; 49 são replays idempotentes.
 func TestSameBetFiftyTimesInParallel(t *testing.T) {
 	inst := instances(t, 3, domain.DefaultReferencePolicy)
 	w := tu.OpenWallet(t, inst[0], "100.00")
@@ -79,9 +79,9 @@ func TestSameBetFiftyTimesInParallel(t *testing.T) {
 	tu.AssertConsistent(t, inst[0].Pool, w.ID())
 }
 
-// TestTwoConcurrentBetsOnLimitedBalance is the mandatory race: 100.00 BRL,
-// two different 80.00 bets at the same time -> one PROCESSED, one REJECTED
-// (INSUFFICIENT_FUNDS), final 20.00, one debit; resending changes nothing.
+// TestTwoConcurrentBetsOnLimitedBalance é a corrida obrigatória: 100.00 BRL,
+// duas apostas diferentes de 80.00 ao mesmo tempo -> uma PROCESSED, uma REJECTED
+// (INSUFFICIENT_FUNDS), saldo final 20.00, um débito; reenvio não altera nada.
 func TestTwoConcurrentBetsOnLimitedBalance(t *testing.T) {
 	for round := 0; round < 10; round++ {
 		inst := instances(t, 3, domain.DefaultReferencePolicy)
@@ -109,7 +109,7 @@ func TestTwoConcurrentBetsOnLimitedBalance(t *testing.T) {
 		wg.Wait()
 		assertRaceOutcome(t, inst[0], w.ID(), results)
 
-		// Resend both (from the third instance): nothing changes.
+		// Reenvio de ambas (da terceira instância): nada muda.
 		for i := range reqs {
 			r, err := submit(inst[2], reqs[i])
 			if err != nil || !r.Replay || r.Transaction.Status() != results[i].Transaction.Status() {
@@ -140,13 +140,13 @@ func assertRaceOutcome(t *testing.T, s *tu.Services, walletID uuid.UUID, results
 	tu.AssertConsistent(t, s.Pool, walletID)
 }
 
-// TestIndependentWalletsProgressInParallel: while one wallet is locked by a
-// long transaction, operations on other wallets complete (no global lock).
+// TestIndependentWalletsProgressInParallel: enquanto uma carteira está bloqueada por uma
+// transação longa, operações em outras carteiras são concluídas (sem bloqueio global).
 func TestIndependentWalletsProgressInParallel(t *testing.T) {
 	inst := instances(t, 3, domain.DefaultReferencePolicy)
 	blocked := tu.OpenWallet(t, inst[0], "100.00")
 
-	// Hold the lock of "blocked" in an open transaction.
+	// Mantém o lock de "blocked" em uma transação aberta.
 	owner := tu.OwnerPool(t)
 	ctx := context.Background()
 	lockTx, err := owner.Begin(ctx)
@@ -189,8 +189,8 @@ func TestIndependentWalletsProgressInParallel(t *testing.T) {
 	}
 }
 
-// TestManyConcurrentMixedOperationsOnOneWallet: heavy contention on one
-// wallet never produces a negative balance or a lost update.
+// TestManyConcurrentMixedOperationsOnOneWallet: alta contenção em uma
+// carteira nunca produz saldo negativo ou atualização perdida.
 func TestManyConcurrentMixedOperationsOnOneWallet(t *testing.T) {
 	inst := instances(t, 3, domain.DefaultReferencePolicy)
 	w := tu.OpenWallet(t, inst[0], "100.00")
@@ -230,8 +230,8 @@ func TestManyConcurrentMixedOperationsOnOneWallet(t *testing.T) {
 	tu.AssertConsistent(t, inst[0].Pool, w.ID())
 }
 
-// TestIdempotencyRules covers replay with the original result, key reuse
-// with a different payload, and external id reuse with another key.
+// TestIdempotencyRules cobre replay com o resultado original, reutilização de chave
+// com payload diferente, e reutilização de id externo com outra chave.
 func TestIdempotencyRules(t *testing.T) {
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
 	w := tu.OpenWallet(t, s, "100.00")
@@ -241,22 +241,22 @@ func TestIdempotencyRules(t *testing.T) {
 	if first.Replay {
 		t.Fatal("first submission flagged as replay")
 	}
-	// Other movements happen afterwards...
+	// Outros movimentos ocorrem depois...
 	tu.Submit(t, s, tu.Req(t, "provider-a", w, domain.KindWin, "50.00", "idem-win-"+uuid.NewString(), ""))
-	// ...but the replay still returns the balance observed originally.
+	// ...mas o replay ainda retorna o saldo observado originalmente.
 	replay := tu.Submit(t, s, req)
 	rb, _ := replay.Transaction.ResultBalance()
 	if !replay.Replay || rb.Amount() != "90.00" || replay.Transaction.ID() != first.Transaction.ID() {
 		t.Fatalf("replay: %v %s", replay.Replay, rb)
 	}
 
-	// Same key, different payload -> conflict.
+	// Mesma chave, payload diferente -> conflito.
 	raw := tu.RawReq("provider-a", w, domain.KindBet, "11.00", ext, "")
 	changed, _ := domain.NewExternalRequest(raw)
 	if _, err := submit(s, changed); !errors.Is(err, app.ErrIdempotencyConflict) {
 		t.Fatalf("expected idempotency conflict, got %v", err)
 	}
-	// Same external id, other key -> conflict (no reapplication).
+	// Mesmo id externo, outra chave -> conflito (sem reaplicação).
 	raw = tu.RawReq("provider-a", w, domain.KindBet, "10.00", ext, "")
 	raw.IdempotencyKey = "another-key-" + uuid.NewString()
 	otherKey, _ := domain.NewExternalRequest(raw)
@@ -268,7 +268,7 @@ func TestIdempotencyRules(t *testing.T) {
 		t.Fatalf("debits %d", debits)
 	}
 
-	// Idempotency survives a "restart": a brand new service/pool.
+	// Idempotência sobrevive a um "restart": serviço/pool totalmente novo.
 	restarted := tu.NewServices(t, domain.DefaultReferencePolicy)
 	again := tu.Submit(t, restarted, req)
 	if !again.Replay || again.Transaction.ID() != first.Transaction.ID() {
@@ -277,8 +277,8 @@ func TestIdempotencyRules(t *testing.T) {
 	tu.AssertConsistent(t, s.Pool, w.ID())
 }
 
-// TestReversalBeforeReferenceIsResolvedLater: a REFUND arrives before its
-// BET, waits in PENDING_REFERENCE, and the worker settles it later.
+// TestReversalBeforeReferenceIsResolvedLater: um REFUND chega antes do seu
+// BET, aguarda em PENDING_REFERENCE, e o worker o liquida depois.
 func TestReversalBeforeReferenceIsResolvedLater(t *testing.T) {
 	policy := domain.ReferencePolicy{MaxAttempts: 20, TTL: time.Minute, BaseBackoff: 50 * time.Millisecond, MaxBackoff: 200 * time.Millisecond}
 	s := tu.NewServices(t, policy)
@@ -292,7 +292,7 @@ func TestReversalBeforeReferenceIsResolvedLater(t *testing.T) {
 	if bet.Transaction.Status() != domain.StatusProcessed {
 		t.Fatal("bet not processed")
 	}
-	// A different instance (fresh pool) resumes the pending refund.
+	// Uma instância diferente (pool novo) retoma o reembolso pendente.
 	worker := tu.NewServices(t, policy)
 	final := waitFinal(t, worker, refund.Transaction.ID(), 10*time.Second)
 	if final.Status() != domain.StatusProcessed || final.ReferenceTransactionID() != bet.Transaction.ID() {
@@ -302,7 +302,7 @@ func TestReversalBeforeReferenceIsResolvedLater(t *testing.T) {
 	if bal != 10000 {
 		t.Fatalf("balance %d", bal)
 	}
-	// A second refund of the same bet is rejected.
+	// Um segundo reembolso da mesma aposta é rejeitado.
 	dup := tu.Submit(t, s, tu.Req(t, "provider-a", w, domain.KindRefund, "30.00", "refund2-"+uuid.NewString(), betExt))
 	if dup.Transaction.FailureCode() != domain.FailureReferenceAlreadyReversed {
 		t.Fatalf("second refund: %s", dup.Transaction.FailureCode())
@@ -310,8 +310,8 @@ func TestReversalBeforeReferenceIsResolvedLater(t *testing.T) {
 	tu.AssertConsistent(t, s.Pool, w.ID())
 }
 
-// TestPendingReferenceExpires: the reference never arrives -> REJECTED
-// with REFERENCE_NOT_FOUND after the retry budget.
+// TestPendingReferenceExpires: a referência nunca chega -> REJECTED
+// com REFERENCE_NOT_FOUND após o orçamento de retentativas.
 func TestPendingReferenceExpires(t *testing.T) {
 	policy := domain.ReferencePolicy{MaxAttempts: 3, TTL: time.Minute, BaseBackoff: 50 * time.Millisecond, MaxBackoff: 100 * time.Millisecond}
 	s := tu.NewServices(t, policy)
@@ -330,8 +330,8 @@ func TestPendingReferenceExpires(t *testing.T) {
 	tu.AssertConsistent(t, s.Pool, w.ID())
 }
 
-// TestConcurrentReversalsOfSameBet: REFUND and ROLLBACK of the same bet
-// race; exactly one succeeds (the other is REFERENCE_ALREADY_REVERSED).
+// TestConcurrentReversalsOfSameBet: REFUND e ROLLBACK da mesma aposta
+// competem; exatamente um tem sucesso (o outro é REFERENCE_ALREADY_REVERSED).
 func TestConcurrentReversalsOfSameBet(t *testing.T) {
 	inst := instances(t, 2, domain.DefaultReferencePolicy)
 	w := tu.OpenWallet(t, inst[0], "100.00")
@@ -366,9 +366,9 @@ func TestConcurrentReversalsOfSameBet(t *testing.T) {
 	tu.AssertConsistent(t, inst[0].Pool, w.ID())
 }
 
-// TestResumeCrashedPending: a PENDING row committed by an instance that
-// died before settling (simulated by inserting it directly) is resumed by
-// another instance.
+// TestResumeCrashedPending: uma linha PENDING confirmada por uma instância que
+// morreu antes de liquidar (simulada por inserção direta) é retomada por
+// outra instância.
 func TestResumeCrashedPending(t *testing.T) {
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
 	w := tu.OpenWallet(t, s, "100.00")
@@ -383,7 +383,7 @@ func TestResumeCrashedPending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// While pending, a replay reports PENDING and does not apply twice.
+	// Enquanto pendente, um replay reporta PENDING e não aplica duas vezes.
 	r := tu.Submit(t, s, req)
 	if !r.Replay || r.Transaction.Status() != domain.StatusPending {
 		t.Fatalf("replay of pending: %v %s", r.Replay, r.Transaction.Status())
@@ -400,7 +400,7 @@ func TestResumeCrashedPending(t *testing.T) {
 	tu.AssertConsistent(t, s.Pool, w.ID())
 }
 
-// TestReconciliation checks the endpoint's use case on a busy wallet.
+// TestReconciliation verifica o caso de uso do endpoint em uma carteira movimentada.
 func TestReconciliation(t *testing.T) {
 	s := tu.NewServices(t, domain.DefaultReferencePolicy)
 	w := tu.OpenWallet(t, s, "1000.00")
@@ -415,7 +415,7 @@ func TestReconciliation(t *testing.T) {
 	}
 }
 
-// waitFinal drives ResumeDue until the transaction is terminal.
+// waitFinal aciona ResumeDue até a transação ser terminal.
 func waitFinal(t *testing.T, s *tu.Services, id uuid.UUID, timeout time.Duration) *domain.WagerTransaction {
 	t.Helper()
 	deadline := time.Now().Add(timeout)

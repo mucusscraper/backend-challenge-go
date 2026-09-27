@@ -1,15 +1,15 @@
-// Package messaging adapts AWS SQS (LocalStack locally): the inbound
-// wager-transactions consumer and the outbound event publisher used by the
+// Package messaging adapta o AWS SQS (LocalStack localmente): o consumer de
+// wager-transactions de entrada e o publicador de eventos de saída usado pelo
 // outbox relay.
 //
-// Routing contracts:
-//   - inbound  wager-transactions.fifo: MessageGroupId = walletId (orders a
-//     wallet's messages and lets different wallets proceed in parallel);
-//     MessageDeduplicationId = envelope messageId (5-minute broker dedup, an
-//     optimisation only: the inbox is the durable dedup).
-//   - outbound wallet-events.fifo: MessageGroupId = aggregateId,
-//     MessageDeduplicationId = eventId, message attributes eventType and
-//     eventId. Consumers must deduplicate by eventId (at-least-once).
+// Contratos de roteamento:
+//   - entrada  wager-transactions.fifo: MessageGroupId = walletId (ordena as
+//     mensagens de uma carteira e permite que carteiras diferentes procedam em
+//     paralelo); MessageDeduplicationId = messageId do envelope (dedup de 5 min
+//     do broker, apenas otimização: o inbox é o dedup durável).
+//   - saída wallet-events.fifo: MessageGroupId = aggregateId,
+//     MessageDeduplicationId = eventId, atributos de mensagem eventType e
+//     eventId. Consumidores devem deduplicar por eventId (at-least-once).
 package messaging
 
 import (
@@ -29,7 +29,7 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/config"
 )
 
-// API is the subset of the SQS client used by the service (mockable).
+// API é o subconjunto do cliente SQS usado pelo serviço (mockável).
 type API interface {
 	ReceiveMessage(ctx context.Context, in *sqs.ReceiveMessageInput, opts ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error)
 	DeleteMessage(ctx context.Context, in *sqs.DeleteMessageInput, opts ...func(*sqs.Options)) (*sqs.DeleteMessageOutput, error)
@@ -39,9 +39,9 @@ type API interface {
 	GetQueueAttributes(ctx context.Context, in *sqs.GetQueueAttributesInput, opts ...func(*sqs.Options)) (*sqs.GetQueueAttributesOutput, error)
 }
 
-// NewClient builds an SQS client. Credentials are static (from env) so the
-// broker's access policies apply to a known principal; the endpoint is
-// overridden for LocalStack.
+// NewClient constrói um cliente SQS. As credenciais são estáticas (de variáveis
+// de ambiente) para que as políticas de acesso do broker se apliquem a um
+// principal conhecido; o endpoint é sobrescrito para o LocalStack.
 func NewClient(cfg config.AWSConfig) (*sqs.Client, error) {
 	opts := []func(*awsconfig.LoadOptions) error{awsconfig.WithRegion(cfg.Region)}
 	if cfg.AccessKeyID != "" {
@@ -59,20 +59,20 @@ func NewClient(cfg config.AWSConfig) (*sqs.Client, error) {
 	}), nil
 }
 
-// Queues holds the resolved queue URLs.
+// Queues mantém as URLs de fila resolvidas.
 type Queues struct {
 	api                  API
 	names                config.SQSConfig
 	Inbound, DLQ, Events string
 }
 
-// NewQueues builds an unresolved Queues; call Resolve at startup.
+// NewQueues constrói um Queues não resolvido; chame Resolve na inicialização.
 func NewQueues(api API, cfg config.SQSConfig) *Queues {
 	return &Queues{api: api, names: cfg}
 }
 
-// Resolve looks up queue URLs, retrying until timeout so the service can
-// start while the broker is still provisioning.
+// Resolve consulta as URLs das filas, repetindo até o timeout para que o
+// serviço possa iniciar enquanto o broker ainda está provisionando.
 func (q *Queues) Resolve(ctx context.Context, timeout time.Duration, log *slog.Logger) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -110,7 +110,7 @@ func (q *Queues) url(ctx context.Context, name string) (string, error) {
 	return aws.ToString(out.QueueUrl), nil
 }
 
-// Ping checks the broker is reachable (readiness).
+// Ping verifica se o broker está acessível (readiness).
 func (q *Queues) Ping(ctx context.Context) error {
 	if q.Inbound == "" {
 		return errors.New("sqs: queues not resolved")
@@ -122,20 +122,21 @@ func (q *Queues) Ping(ctx context.Context) error {
 	return err
 }
 
-// Publisher sends outbox events to the events queue.
+// Publisher envia eventos do outbox para a fila de eventos.
 type Publisher struct {
 	api    API
 	queues *Queues
 }
 
-// NewPublisher builds the publisher.
+// NewPublisher constrói o publisher.
 func NewPublisher(api API, queues *Queues) *Publisher { return &Publisher{api: api, queues: queues} }
 
 var _ app.EventPublisher = (*Publisher)(nil)
 
-// Publish sends the immutable envelope snapshot. The eventId is the FIFO
-// deduplication id, so a republication within 5 minutes is dropped by the
-// broker, and after that it carries the same eventId for consumer dedup.
+// Publish envia o snapshot imutável do envelope. O eventId é o id de
+// deduplicação FIFO, portanto uma republicação dentro de 5 minutos é
+// descartada pelo broker; após isso, carrega o mesmo eventId para dedup
+// no lado do consumidor.
 func (p *Publisher) Publish(ctx context.Context, m app.OutboxMessage) error {
 	_, err := p.api.SendMessage(ctx, &sqs.SendMessageInput{
 		QueueUrl:               aws.String(p.queues.Events),

@@ -1,15 +1,16 @@
-// Package app contains the use cases of the service (open wallet, submit a
-// wager transaction, resume pending transactions, queries, reconciliation).
+// Package app contém os casos de uso do serviço (abrir carteira, enviar uma
+// transação de aposta, retomar transações pendentes, consultas, reconciliação).
 //
-// HTTP handlers and the SQS consumer call the very same use cases, so both
-// entry points share validation, idempotency and financial guarantees.
+// Handlers HTTP e o consumidor SQS chamam os mesmos casos de uso, de modo que
+// ambos os pontos de entrada compartilham validação, idempotência e garantias
+// financeiras.
 //
-// The package depends on the domain and on the ports declared in this file;
-// the PostgreSQL adapter implements them. The SQL transaction boundary is
-// explicit: UnitOfWork.Run opens one database transaction and every
-// repository obtained from the Tx argument participates in it, so wallet,
-// transaction, ledger, inbox and outbox writes commit (or roll back)
-// atomically.
+// O pacote depende do domínio e das ports declaradas neste arquivo;
+// o adaptador PostgreSQL as implementa. O limite da transação SQL é
+// explícito: UnitOfWork.Run abre uma transação do banco de dados e cada
+// repositório obtido do argumento Tx participa dela, de modo que as gravações
+// de carteira, transação, ledger, inbox e outbox fazem commit (ou rollback)
+// atomicamente.
 package app
 
 import (
@@ -21,18 +22,18 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/domain"
 )
 
-// UnitOfWork delimits SQL transactions.
+// UnitOfWork delimita transações SQL.
 type UnitOfWork interface {
-	// Run executes fn inside a READ COMMITTED transaction with a bounded
-	// lock timeout. fn's error rolls the transaction back; a nil error
-	// commits it. Repositories from tx must not be used after fn returns.
+	// Run executa fn dentro de uma transação READ COMMITTED com um timeout de
+	// lock limitado. O erro de fn faz rollback; nil faz commit. Repositórios
+	// de tx não devem ser usados após fn retornar.
 	Run(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error
-	// Snapshot executes fn inside a REPEATABLE READ, READ ONLY transaction:
-	// every query sees the same consistent snapshot (used by reconciliation).
+	// Snapshot executa fn dentro de uma transação REPEATABLE READ, READ ONLY:
+	// cada consulta vê o mesmo snapshot consistente (usado pela reconciliação).
 	Snapshot(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error
 }
 
-// Tx gives access to the repositories bound to one SQL transaction.
+// Tx dá acesso aos repositórios vinculados a uma transação SQL.
 type Tx interface {
 	Wallets() WalletRepository
 	Transactions() TransactionRepository
@@ -41,89 +42,89 @@ type Tx interface {
 	Inbox() InboxRepository
 }
 
-// WalletRepository persists the Wallet aggregate.
+// WalletRepository persiste o agregado Wallet.
 type WalletRepository interface {
-	// Insert stores a new wallet; ErrWalletAlreadyExists when (player,
-	// currency) already has a wallet.
+	// Insert armazena uma nova carteira; ErrWalletAlreadyExists quando
+	// (player, currency) já tem uma carteira.
 	Insert(ctx context.Context, w *domain.Wallet) error
-	// Get loads a wallet without locking; ErrWalletNotFound if absent.
+	// Get carrega uma carteira sem bloquear; ErrWalletNotFound se ausente.
 	Get(ctx context.Context, id uuid.UUID) (*domain.Wallet, error)
-	// GetForUpdate loads and row-locks a wallet (SELECT ... FOR UPDATE).
-	// This is the per-wallet coordination point: every writer of a wallet
-	// goes through it, and wallets never share a lock.
+	// GetForUpdate carrega e faz row-lock de uma carteira (SELECT ... FOR UPDATE).
+	// Este é o ponto de coordenação por carteira: todo escritor de uma carteira
+	// passa por aqui, e carteiras nunca compartilham um lock.
 	GetForUpdate(ctx context.Context, id uuid.UUID) (*domain.Wallet, error)
-	// TryGetForUpdate is GetForUpdate with SKIP LOCKED: it returns
-	// (nil, nil) when another transaction holds the lock.
+	// TryGetForUpdate é GetForUpdate com SKIP LOCKED: retorna
+	// (nil, nil) quando outra transação mantém o lock.
 	TryGetForUpdate(ctx context.Context, id uuid.UUID) (*domain.Wallet, error)
-	// UpdateBalance writes balance/version/updatedAt with a compare-and-set
-	// on expectedVersion; ErrConcurrentUpdate when no row matched.
+	// UpdateBalance grava balance/version/updatedAt com compare-and-set
+	// em expectedVersion; ErrConcurrentUpdate quando nenhuma linha correspondeu.
 	UpdateBalance(ctx context.Context, w *domain.Wallet, expectedVersion int64) error
 }
 
-// TransactionRepository persists wager transactions.
+// TransactionRepository persiste transações de aposta.
 type TransactionRepository interface {
-	// Insert stores a transaction. Unique-constraint races are reported as
-	// ErrRetryableConflict.
+	// Insert armazena uma transação. Corridas de constraint única são relatadas
+	// como ErrRetryableConflict.
 	Insert(ctx context.Context, t *domain.WagerTransaction) error
-	// Update persists a transition, guarded by the previous status.
+	// Update persiste uma transição, protegida pelo status anterior.
 	Update(ctx context.Context, t *domain.WagerTransaction, expectedStatus domain.Status) error
-	// Get loads a transaction; ErrNotFound if absent.
+	// Get carrega uma transação; ErrNotFound se ausente.
 	Get(ctx context.Context, id uuid.UUID) (*domain.WagerTransaction, error)
-	// FindByExternalID resolves (providerId, externalTransactionId); returns
-	// (nil, nil) when absent.
+	// FindByExternalID resolve (providerId, externalTransactionId); retorna
+	// (nil, nil) quando ausente.
 	FindByExternalID(ctx context.Context, providerID, externalID string) (*domain.WagerTransaction, error)
-	// FindByIdempotency returns the transactions of the provider matching
-	// either the idempotency key or the external id (0, 1 or 2 rows).
+	// FindByIdempotency retorna as transações do provedor que correspondem
+	// à chave de idempotência ou ao id externo (0, 1 ou 2 linhas).
 	FindByIdempotency(ctx context.Context, providerID, key, externalID string) ([]*domain.WagerTransaction, error)
-	// HasSuccessfulReversal reports whether a PROCESSED REFUND or ROLLBACK
-	// already targets the transaction.
+	// HasSuccessfulReversal informa se um REFUND ou ROLLBACK PROCESSED já
+	// tem como alvo a transação.
 	HasSuccessfulReversal(ctx context.Context, referenceID uuid.UUID) (bool, error)
-	// ListDue returns open transactions whose next attempt is due.
+	// ListDue retorna transações abertas cuja próxima tentativa está devida.
 	ListDue(ctx context.Context, now time.Time, limit int) ([]DueTransaction, error)
 }
 
-// DueTransaction identifies a transaction the pending worker must resume.
+// DueTransaction identifica uma transação que o worker de pendentes deve retomar.
 type DueTransaction struct {
 	ID       uuid.UUID
 	WalletID uuid.UUID
 }
 
-// LedgerRepository appends and reads ledger entries.
+// LedgerRepository adiciona e lê entradas do ledger.
 type LedgerRepository interface {
 	Insert(ctx context.Context, e domain.LedgerEntry) error
-	// List returns up to limit entries with seq > afterSeq, ordered by seq.
+	// List retorna até limit entradas com seq > afterSeq, ordenadas por seq.
 	List(ctx context.Context, walletID uuid.UUID, afterSeq int64, limit int) ([]LedgerRow, error)
-	// Totals sums credits and debits (minor units) and counts entries.
+	// Totals soma créditos e débitos (unidades menores) e conta entradas.
 	Totals(ctx context.Context, walletID uuid.UUID) (LedgerTotals, error)
 }
 
-// LedgerRow is a ledger entry with its pagination sequence.
+// LedgerRow é uma entrada do ledger com sua sequência de paginação.
 type LedgerRow struct {
 	Seq   int64
 	Entry domain.LedgerEntry
 }
 
-// LedgerTotals aggregates a wallet's ledger.
+// LedgerTotals agrega o ledger de uma carteira.
 type LedgerTotals struct {
 	CreditsMinor int64
 	DebitsMinor  int64
 	Count        int64
 }
 
-// OutboxRepository stores events to be published after commit.
+// OutboxRepository armazena eventos a serem publicados após o commit.
 type OutboxRepository interface {
 	Append(ctx context.Context, events ...domain.Event) error
 }
 
-// InboxRepository records completed handling of inbound messages.
+// InboxRepository registra o tratamento concluído de mensagens de entrada.
 type InboxRepository interface {
-	// Get returns the record or (nil, nil) when absent.
+	// Get retorna o registro ou (nil, nil) quando ausente.
 	Get(ctx context.Context, consumer, messageID string) (*InboxRecord, error)
-	// Insert stores the record; a duplicate is ErrRetryableConflict.
+	// Insert armazena o registro; uma duplicata é ErrRetryableConflict.
 	Insert(ctx context.Context, r InboxRecord) error
 }
 
-// InboxRecord is the durable trace of a handled message.
+// InboxRecord é o rastro durável de uma mensagem tratada.
 type InboxRecord struct {
 	Consumer      string
 	MessageID     string
@@ -134,8 +135,8 @@ type InboxRecord struct {
 	CompletedAt   time.Time
 }
 
-// OutboxMessage is a claimed outbox event ready to be published. Payload is
-// the immutable envelope snapshot stored at commit time.
+// OutboxMessage é um evento do outbox reivindicado e pronto para publicação.
+// Payload é o snapshot imutável do envelope armazenado no momento do commit.
 type OutboxMessage struct {
 	ID          uuid.UUID
 	AggregateID string
@@ -145,29 +146,29 @@ type OutboxMessage struct {
 	OccurredAt  time.Time
 }
 
-// OutboxStore is used by the outbox relay, outside business transactions.
+// OutboxStore é usado pelo relay do outbox, fora das transações de negócio.
 type OutboxStore interface {
-	// Claim leases up to limit due events to owner.
+	// Claim reivindica lease de até limit eventos devidos para o owner.
 	Claim(ctx context.Context, owner string, lease time.Duration, limit int) ([]OutboxMessage, error)
-	// MarkPublished confirms a publication.
+	// MarkPublished confirma uma publicação.
 	MarkPublished(ctx context.Context, id uuid.UUID) error
-	// MarkFailed releases the lease and schedules the next attempt.
+	// MarkFailed libera o lease e agenda a próxima tentativa.
 	MarkFailed(ctx context.Context, id uuid.UUID, owner, lastError string, next time.Time) error
-	// Lag returns the age of the oldest unpublished event.
+	// Lag retorna a idade do evento não publicado mais antigo.
 	Lag(ctx context.Context) (time.Duration, error)
 }
 
-// EventPublisher delivers an outbox event to the message broker.
+// EventPublisher entrega um evento do outbox ao message broker.
 type EventPublisher interface {
 	Publish(ctx context.Context, m OutboxMessage) error
 }
 
-// Clock returns the current time (injectable for tests).
+// Clock retorna o tempo atual (injetável para testes).
 type Clock func() time.Time
 
-// SystemClock is the production clock (UTC).
+// SystemClock é o relógio de produção (UTC).
 func SystemClock() time.Time { return time.Now().UTC() }
 
-// NewUUIDv7 generates time-ordered identifiers, which keeps B-tree inserts
-// local and makes ids roughly sortable by creation.
+// NewUUIDv7 gera identificadores ordenados por tempo, o que mantém as
+// inserções em B-tree locais e torna os ids aproximadamente ordenáveis por criação.
 func NewUUIDv7() uuid.UUID { return uuid.Must(uuid.NewV7()) }

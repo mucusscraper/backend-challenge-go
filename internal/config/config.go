@@ -1,6 +1,6 @@
-// Package config loads and validates the service configuration from
-// environment variables. Validation happens at startup (fx construction),
-// so a misconfigured instance fails fast instead of serving traffic.
+// Package config carrega e valida a configuração do serviço a partir de
+// variáveis de ambiente. A validação ocorre na inicialização (construção do fx),
+// de modo que uma instância mal configurada falha rapidamente em vez de servir tráfego.
 package config
 
 import (
@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-// Config is the full service configuration.
+// Config é a configuração completa do serviço.
 type Config struct {
-	// InstanceID identifies this process in logs and outbox leases.
+	// InstanceID identifica este processo nos logs e nos leases do outbox.
 	InstanceID string
 	LogLevel   string
 
@@ -26,27 +26,27 @@ type Config struct {
 	Outbox   OutboxConfig
 	Pending  PendingConfig
 
-	// ShutdownTimeout bounds the whole graceful shutdown.
+	// ShutdownTimeout limita todo o encerramento gracioso.
 	ShutdownTimeout time.Duration
 }
 
-// HTTPConfig configures the API server.
+// HTTPConfig configura o servidor da API.
 type HTTPConfig struct {
 	Addr              string
 	ReadHeaderTimeout time.Duration
 	RequestTimeout    time.Duration
 }
 
-// PostgresConfig configures the connection pool.
+// PostgresConfig configura o pool de conexões.
 type PostgresConfig struct {
 	DSN            string
 	MaxConns       int32
 	ConnectTimeout time.Duration
-	// LockTimeout bounds how long a transaction waits for a wallet row lock.
+	// LockTimeout limita quanto tempo uma transação espera por um row lock de carteira.
 	LockTimeout time.Duration
 }
 
-// AWSConfig configures the AWS SDK (LocalStack locally).
+// AWSConfig configura o SDK da AWS (LocalStack localmente).
 type AWSConfig struct {
 	Region          string
 	Endpoint        string
@@ -54,7 +54,7 @@ type AWSConfig struct {
 	SecretAccessKey string
 }
 
-// SQSConfig configures the inbound consumer and the outbound event queue.
+// SQSConfig configura o consumidor de entrada e a fila de eventos de saída.
 type SQSConfig struct {
 	ConsumerEnabled   bool
 	ConsumerName      string
@@ -66,30 +66,30 @@ type SQSConfig struct {
 	WaitTime          time.Duration
 	VisibilityTimeout time.Duration
 	HandlerTimeout    time.Duration
-	// RetryBaseDelay/RetryMaxDelay define the visibility backoff applied to
-	// transient failures (SQS redrive moves the message to the DLQ after
-	// maxReceiveCount deliveries).
+	// RetryBaseDelay/RetryMaxDelay definem o backoff de visibilidade aplicado a
+	// falhas transitórias (o redrive do SQS move a mensagem para a DLQ após
+	// maxReceiveCount entregas).
 	RetryBaseDelay time.Duration
 	RetryMaxDelay  time.Duration
-	// AllowedProviders is the domain-level allow list of providers accepted
-	// from the queue (the broker policy controls who may send).
+	// AllowedProviders é a allow list no nível de domínio de provedores aceitos
+	// da fila (a política do broker controla quem pode enviar).
 	AllowedProviders []string
 }
 
-// OIDCConfig configures access-token validation.
+// OIDCConfig configura a validação de access tokens.
 type OIDCConfig struct {
-	// Issuer is the expected "iss" claim.
+	// Issuer é o claim "iss" esperado.
 	Issuer string
-	// JWKSURL is where signing keys are fetched (may differ from Issuer when
-	// the IdP is reached through an internal hostname).
+	// JWKSURL é onde as chaves de assinatura são buscadas (pode diferir do Issuer
+	// quando o IdP é acessado por um hostname interno).
 	JWKSURL string
-	// Audience is the expected "aud" claim.
+	// Audience é o claim "aud" esperado.
 	Audience string
-	// ProviderClaim is the claim holding the provider identity.
+	// ProviderClaim é o claim que contém a identidade do provedor.
 	ProviderClaim string
 }
 
-// OutboxConfig configures the outbox relay.
+// OutboxConfig configura o relay do outbox.
 type OutboxConfig struct {
 	Enabled      bool
 	PollInterval time.Duration
@@ -99,7 +99,7 @@ type OutboxConfig struct {
 	MaxBackoff   time.Duration
 }
 
-// PendingConfig configures the pending-reference worker.
+// PendingConfig configura o worker de referências pendentes.
 type PendingConfig struct {
 	Enabled      bool
 	PollInterval time.Duration
@@ -110,12 +110,12 @@ type PendingConfig struct {
 	MaxBackoff   time.Duration
 }
 
-// Load reads the configuration from the environment and validates it.
+// Load lê a configuração do ambiente e a valida.
 func Load() (Config, error) {
 	return LoadFrom(os.Getenv)
 }
 
-// LoadFrom reads the configuration using getenv (testable).
+// LoadFrom lê a configuração usando getenv (testável).
 func LoadFrom(getenv func(string) string) (Config, error) {
 	r := reader{getenv: getenv}
 	host, _ := os.Hostname()
@@ -188,7 +188,7 @@ func LoadFrom(getenv func(string) string) (Config, error) {
 	return c, c.Validate()
 }
 
-// Validate checks required values and coherent timeouts.
+// Validate verifica valores obrigatórios e timeouts coerentes.
 func (c Config) Validate() error {
 	var errs []error
 	req := func(name, v string) {

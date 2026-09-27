@@ -1,10 +1,10 @@
-// Package migrations embeds the versioned SQL migrations (goose format) so
-// the migrate binary and the integration tests apply exactly the same files.
+// Package migrations incorpora as migrações SQL versionadas (formato goose) para
+// que o binário migrate e os testes de integração apliquem exatamente os mesmos arquivos.
 package migrations
 
 import "embed"
 
-// FS contains every *.sql migration of this directory.
+// FS contém todas as migrações *.sql deste diretório.
 //
 //go:embed *.sql
 var FS embed.FS

@@ -14,10 +14,10 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/observability"
 )
 
-// maxConflictRetries bounds immediate retries of concurrency races.
+// maxConflictRetries limita os retries imediatos de corridas de concorrência.
 const maxConflictRetries = 5
 
-// WageringService implements the wager transaction use cases.
+// WageringService implementa os casos de uso de transação de aposta.
 type WageringService struct {
 	uow     UnitOfWork
 	clock   Clock
@@ -27,13 +27,13 @@ type WageringService struct {
 	metrics *observability.Metrics
 }
 
-// NewWageringService builds the service.
+// NewWageringService constrói o serviço.
 func NewWageringService(uow UnitOfWork, clock Clock, newID domain.IDGenerator, policy domain.ReferencePolicy,
 	log *slog.Logger, metrics *observability.Metrics) *WageringService {
 	return &WageringService{uow: uow, clock: clock, newID: newID, policy: policy, log: log, metrics: metrics}
 }
 
-// InboundMessage identifies the SQS message being handled, for the inbox.
+// InboundMessage identifica a mensagem SQS sendo tratada, para o inbox.
 type InboundMessage struct {
 	Consumer    string
 	MessageID   string
@@ -41,41 +41,41 @@ type InboundMessage struct {
 	ReceivedAt  time.Time
 }
 
-// SubmitCommand is the input of Submit.
+// SubmitCommand é a entrada de Submit.
 type SubmitCommand struct {
 	Request       domain.ExternalRequest
 	CorrelationID string
-	// Source labels metrics/logs: "http" or "sqs".
+	// Source rotula métricas/logs: "http" ou "sqs".
 	Source string
-	// Message is set for SQS deliveries; the inbox record is then written in
-	// the same SQL transaction as the financial effects.
+	// Message é definido para entregas SQS; o registro do inbox é então gravado
+	// na mesma transação SQL que os efeitos financeiros.
 	Message *InboundMessage
 }
 
-// SubmitResult is the outcome of Submit.
+// SubmitResult é o resultado de Submit.
 type SubmitResult struct {
 	Transaction *domain.WagerTransaction
-	// Replay is true when the operation had already been registered and its
-	// persisted result is returned without reapplying it.
+	// Replay é true quando a operação já havia sido registrada e seu
+	// resultado persistido é retornado sem reaplicá-la.
 	Replay bool
-	// DuplicateMessage is true when the inbox recognised the messageId.
+	// DuplicateMessage é true quando o inbox reconheceu o messageId.
 	DuplicateMessage bool
 }
 
-// Submit registers and, when possible, settles an external operation in a
-// single SQL transaction:
+// Submit registra e, quando possível, liquida uma operação externa em uma
+// única transação SQL:
 //
-//  1. inbox check (SQS only): a known messageId returns the stored result;
-//  2. idempotency check by (provider, key) / (provider, externalId);
-//  3. SELECT ... FOR UPDATE on the wallet (per-wallet serialisation);
-//  4. idempotency re-check under the lock (concurrent duplicates wait on
-//     the lock and then see the committed row);
-//  5. reference resolution and domain settlement;
-//  6. insert transaction, update wallet (version compare-and-set), insert
-//     ledger entry, append outbox events, insert inbox record; COMMIT.
+//  1. verificação do inbox (somente SQS): um messageId conhecido retorna o resultado armazenado;
+//  2. verificação de idempotência por (provider, key) / (provider, externalId);
+//  3. SELECT ... FOR UPDATE na carteira (serialização por carteira);
+//  4. reverificação de idempotência sob o lock (duplicatas concorrentes esperam
+//     no lock e então veem a linha commitada);
+//  5. resolução de referência e liquidação de domínio;
+//  6. inserir transação, atualizar carteira (version compare-and-set), inserir
+//     entrada do ledger, adicionar eventos ao outbox, inserir registro inbox; COMMIT.
 //
-// Unique-constraint races and deadlocks roll back and retry the whole unit;
-// the retry then observes the winner's row and becomes a replay.
+// Corridas de constraint única e deadlocks fazem rollback e retentam o unit inteiro;
+// o retry então observa a linha do vencedor e vira um replay.
 func (s *WageringService) Submit(ctx context.Context, cmd SubmitCommand) (SubmitResult, error) {
 	start := time.Now()
 	defer s.metrics.ObserveDuration(cmd.Source, start)
@@ -130,7 +130,7 @@ func (s *WageringService) submitInTx(ctx context.Context, tx Tx, cmd SubmitComma
 		}
 	}
 
-	// Fast path: replay without taking the wallet lock.
+	// Caminho rápido: replay sem adquirir o lock da carteira.
 	if t, err := s.findExisting(ctx, tx, req); err != nil || t != nil {
 		if err != nil {
 			return SubmitResult{}, err
@@ -142,8 +142,8 @@ func (s *WageringService) submitInTx(ctx context.Context, tx Tx, cmd SubmitComma
 	if err != nil {
 		return SubmitResult{}, err
 	}
-	// Re-check under the lock: a concurrent duplicate may have committed
-	// while we were waiting.
+	// Reverificação sob o lock: uma duplicata concorrente pode ter commitado
+	// enquanto aguardávamos.
 	if t, err := s.findExisting(ctx, tx, req); err != nil || t != nil {
 		if err != nil {
 			return SubmitResult{}, err
@@ -185,10 +185,10 @@ func (s *WageringService) settleContext(now time.Time, cmd SubmitCommand) domain
 	return domain.SettleContext{Now: now, NewID: s.newID, CausationID: causation, Policy: s.policy}
 }
 
-// findExisting applies the idempotency rules:
-//   - same key and same payload hash      -> replay;
-//   - same key and different payload hash -> ErrIdempotencyConflict;
-//   - same external id with another key   -> ErrExternalIDConflict.
+// findExisting aplica as regras de idempotência:
+//   - mesma chave e mesmo hash de payload      -> replay;
+//   - mesma chave e hash de payload diferente  -> ErrIdempotencyConflict;
+//   - mesmo id externo com outra chave         -> ErrExternalIDConflict.
 func (s *WageringService) findExisting(ctx context.Context, tx Tx, req domain.ExternalRequest) (*domain.WagerTransaction, error) {
 	rows, err := tx.Transactions().FindByIdempotency(ctx, req.ProviderID(), req.IdempotencyKey(), req.ExternalTransactionID())
 	if err != nil || len(rows) == 0 {
@@ -228,7 +228,7 @@ func (s *WageringService) recordInbox(ctx context.Context, tx Tx, cmd SubmitComm
 	})
 }
 
-// lookupReference resolves (providerId, referenceExternalTransactionId).
+// lookupReference resolve (providerId, referenceExternalTransactionId).
 func (s *WageringService) lookupReference(ctx context.Context, tx Tx, t *domain.WagerTransaction) (domain.ReferenceState, error) {
 	if t.ReferenceExternalTransactionID() == "" {
 		return domain.ReferenceState{}, nil
@@ -248,7 +248,7 @@ func (s *WageringService) lookupReference(ctx context.Context, tx Tx, t *domain.
 	return state, nil
 }
 
-// persistSettlement writes the wallet change, ledger entry and events.
+// persistSettlement grava a mudança da carteira, a entrada do ledger e os eventos.
 func (s *WageringService) persistSettlement(ctx context.Context, tx Tx, w *domain.Wallet, expectedVersion int64, st domain.Settlement) error {
 	if st.Entry != nil {
 		if err := tx.Wallets().UpdateBalance(ctx, w, expectedVersion); err != nil {
@@ -264,8 +264,8 @@ func (s *WageringService) persistSettlement(ctx context.Context, tx Tx, w *domai
 	return nil
 }
 
-// withRetry retries a unit of work on concurrency races with a small
-// jittered backoff. Other errors are returned immediately.
+// withRetry retenta um unit of work em corridas de concorrência com um pequeno
+// backoff com jitter. Outros erros são retornados imediatamente.
 func (s *WageringService) withRetry(ctx context.Context, op string, fn func() error) error {
 	return retryConflicts(ctx, s.metrics, s.log, op, fn)
 }
@@ -287,11 +287,11 @@ func retryConflicts(ctx context.Context, m *observability.Metrics, log *slog.Log
 		case <-time.After(delay):
 		}
 	}
-	// Persistent contention is surfaced as a transient condition.
+	// Contenção persistente é exposta como condição transitória.
 	return fmt.Errorf("%w: %v", ErrTransient, err)
 }
 
-// GetTransaction returns a transaction by internal id.
+// GetTransaction retorna uma transação pelo id interno.
 func (s *WageringService) GetTransaction(ctx context.Context, id uuid.UUID) (*domain.WagerTransaction, error) {
 	var t *domain.WagerTransaction
 	err := s.uow.Run(ctx, func(ctx context.Context, tx Tx) error {
@@ -302,7 +302,7 @@ func (s *WageringService) GetTransaction(ctx context.Context, id uuid.UUID) (*do
 	return t, err
 }
 
-// GetByExternalID returns a provider's transaction by external id.
+// GetByExternalID retorna a transação de um provedor pelo id externo.
 func (s *WageringService) GetByExternalID(ctx context.Context, providerID, externalID string) (*domain.WagerTransaction, error) {
 	var t *domain.WagerTransaction
 	err := s.uow.Run(ctx, func(ctx context.Context, tx Tx) error {
@@ -316,11 +316,11 @@ func (s *WageringService) GetByExternalID(ctx context.Context, providerID, exter
 	return t, err
 }
 
-// ResumeDue resumes up to limit PENDING/PENDING_REFERENCE transactions
-// whose next attempt is due. It is safe to run on any number of instances:
-// each transaction is re-validated under its wallet lock, and wallets locked
-// by someone else are skipped (SKIP LOCKED) and picked up on a later poll.
-// It returns how many transactions actually progressed.
+// ResumeDue retoma até limit transações PENDING/PENDING_REFERENCE
+// cuja próxima tentativa está devida. É seguro rodar em qualquer número de
+// instâncias: cada transação é revalidada sob o lock de sua carteira, e
+// carteiras bloqueadas por outra instância são ignoradas (SKIP LOCKED) e
+// retomadas em um poll posterior. Retorna quantas transações progrediram.
 func (s *WageringService) ResumeDue(ctx context.Context, limit int) (int, error) {
 	var due []DueTransaction
 	err := s.uow.Run(ctx, func(ctx context.Context, tx Tx) error {
@@ -359,7 +359,7 @@ func (s *WageringService) resumeOne(ctx context.Context, d DueTransaction) (bool
 		return s.uow.Run(ctx, func(ctx context.Context, tx Tx) error {
 			w, err := tx.Wallets().TryGetForUpdate(ctx, d.WalletID)
 			if err != nil || w == nil {
-				return err // nil wallet: locked elsewhere, retry on next poll
+				return err // carteira nil: bloqueada em outro lugar, retenta no próximo poll
 			}
 			t, err := tx.Transactions().Get(ctx, d.ID)
 			if err != nil {
@@ -367,7 +367,7 @@ func (s *WageringService) resumeOne(ctx context.Context, d DueTransaction) (bool
 			}
 			now := s.clock()
 			if t.Status().IsTerminal() || t.NextAttemptAt().After(now) {
-				return nil // already handled by another instance
+				return nil // já tratada por outra instância
 			}
 			prev := t.Status()
 			ref, err := s.lookupReference(ctx, tx, t)
@@ -404,8 +404,8 @@ func (s *WageringService) resumeOne(ctx context.Context, d DueTransaction) (bool
 	return outcome != nil, nil
 }
 
-// failPermanently records a FAILED status for audit when resuming hit a
-// non-transient error (corrupt data, violated constraint...).
+// failPermanently registra o status FAILED para auditoria quando a retomada
+// encontrou um erro não transitório (dados corrompidos, constraint violada...).
 func (s *WageringService) failPermanently(ctx context.Context, d DueTransaction, cause error) {
 	s.log.ErrorContext(ctx, "pending transaction failed permanently", "transactionId", d.ID.String(), "error", cause)
 	err := s.uow.Run(ctx, func(ctx context.Context, tx Tx) error {

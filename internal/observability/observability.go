@@ -1,7 +1,7 @@
-// Package observability provides structured JSON logging (log/slog) and
-// Prometheus metrics. Log helpers only carry identifiers (correlationId,
-// messageId, transactionId, walletId, providerId); credentials and full
-// financial payloads are never logged.
+// Package observability fornece logging JSON estruturado (log/slog) e métricas
+// Prometheus. Os helpers de log carregam apenas identificadores (correlationId,
+// messageId, transactionId, walletId, providerId); credenciais e payloads
+// financeiros completos nunca são registrados.
 package observability
 
 import (
@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
-// NewLogger builds a JSON logger writing to stdout.
+// NewLogger constrói um logger JSON gravando no stdout.
 func NewLogger(level, instanceID string) *slog.Logger {
 	var lvl slog.Level
 	switch strings.ToLower(level) {
@@ -34,8 +34,8 @@ func NewLogger(level, instanceID string) *slog.Logger {
 
 type logFieldsKey struct{}
 
-// WithLogFields returns a context carrying extra log attributes. Handlers
-// automatically add them to every record logged with that context.
+// WithLogFields retorna um contexto carregando atributos de log extras. Os
+// handlers os adicionam automaticamente a todo registro feito com esse contexto.
 func WithLogFields(ctx context.Context, args ...any) context.Context {
 	prev, _ := ctx.Value(logFieldsKey{}).([]any)
 	merged := make([]any, 0, len(prev)+len(args))
@@ -44,7 +44,7 @@ func WithLogFields(ctx context.Context, args ...any) context.Context {
 	return context.WithValue(ctx, logFieldsKey{}, merged)
 }
 
-// contextHandler injects the attributes stored by WithLogFields.
+// contextHandler injeta os atributos armazenados por WithLogFields.
 type contextHandler struct {
 	slog.Handler
 }
@@ -64,39 +64,39 @@ func (h *contextHandler) WithGroup(name string) slog.Handler {
 	return &contextHandler{Handler: h.Handler.WithGroup(name)}
 }
 
-// Metrics groups every Prometheus collector of the service.
+// Metrics agrupa todos os coletores Prometheus do serviço.
 type Metrics struct {
 	Registry *prometheus.Registry
 
-	// TransactionsTotal counts processed operations by kind, final status
-	// and source (http, sqs, worker).
+	// TransactionsTotal conta operações processadas por tipo, status final
+	// e fonte (http, sqs, worker).
 	TransactionsTotal *prometheus.CounterVec
-	// DuplicatesTotal counts replays detected by idempotency (idempotency
-	// key / external id) or by the inbox (messageId).
+	// DuplicatesTotal conta replays detectados por idempotência (chave de
+	// idempotência / id externo) ou pelo inbox (messageId).
 	DuplicatesTotal *prometheus.CounterVec
-	// RetriesTotal counts retries by component (db_tx, sqs, outbox, pending).
+	// RetriesTotal conta retries por componente (db_tx, sqs, outbox, pending).
 	RetriesTotal *prometheus.CounterVec
-	// DLQTotal counts messages sent to the DLQ by reason.
+	// DLQTotal conta mensagens enviadas à DLQ por motivo.
 	DLQTotal *prometheus.CounterVec
-	// ConcurrencyConflictsTotal counts lock timeouts, unique races and
-	// version mismatches resolved by retrying.
+	// ConcurrencyConflictsTotal conta timeouts de lock, corridas de unicidade
+	// e incompatibilidades de versão resolvidas por retry.
 	ConcurrencyConflictsTotal *prometheus.CounterVec
-	// ProcessingDuration measures use-case latency by source.
+	// ProcessingDuration mede a latência do caso de uso por fonte.
 	ProcessingDuration *prometheus.HistogramVec
-	// OutboxLag is the age in seconds of the oldest unpublished event.
+	// OutboxLag é a idade em segundos do evento não publicado mais antigo.
 	OutboxLag prometheus.Gauge
-	// OutboxPublishedTotal counts published events by type.
+	// OutboxPublishedTotal conta eventos publicados pelo outbox por tipo.
 	OutboxPublishedTotal *prometheus.CounterVec
-	// OutboxFailuresTotal counts failed publish attempts.
+	// OutboxFailuresTotal conta tentativas de publicação com falha.
 	OutboxFailuresTotal prometheus.Counter
-	// ReconciliationDivergences counts wallets whose stored balance differs
-	// from the ledger.
+	// ReconciliationDivergences conta carteiras cujo saldo armazenado difere
+	// do ledger.
 	ReconciliationDivergences prometheus.Counter
-	// PendingResolutions counts pending-reference outcomes.
+	// PendingResolutions conta resultados de referências pendentes.
 	PendingResolutions *prometheus.CounterVec
 }
 
-// NewMetrics registers all collectors in a dedicated registry.
+// NewMetrics registra todos os coletores em um registry dedicado.
 func NewMetrics() *Metrics {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
@@ -144,7 +144,7 @@ func NewMetrics() *Metrics {
 	return m
 }
 
-// ObserveDuration records the elapsed time since start for source.
+// ObserveDuration registra o tempo decorrido desde start para a fonte.
 func (m *Metrics) ObserveDuration(source string, start time.Time) {
 	m.ProcessingDuration.WithLabelValues(source).Observe(time.Since(start).Seconds())
 }

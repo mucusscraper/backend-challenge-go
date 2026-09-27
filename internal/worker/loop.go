@@ -1,7 +1,7 @@
-// Package worker contains the background workers: the outbox relay and the
-// pending-reference resolver. Both run on a Loop whose lifecycle is driven by
-// fx (Start/Stop hooks), with cancellation, bounded shutdown and observable
-// termination (Done channel).
+// Package worker contém os workers de fundo: o outbox relay e o resolvedor de
+// referências pendentes. Ambos rodam em um Loop cujo ciclo de vida é dirigido
+// pelo fx (hooks Start/Stop), com cancelamento, desligamento limitado e
+// terminação observável (canal Done).
 package worker
 
 import (
@@ -13,10 +13,10 @@ import (
 	"time"
 )
 
-// Loop runs fn periodically until stopped. When fn reports that it did work
-// (n > 0) the next iteration starts immediately, so backlogs drain quickly;
-// otherwise the loop sleeps for interval (with jitter, so several instances
-// do not poll in lockstep).
+// Loop executa fn periodicamente até ser parado. Quando fn reporta que fez
+// trabalho (n > 0), a próxima iteração começa imediatamente, drenando filas
+// rapidamente; caso contrário o loop dorme por interval (com jitter, para que
+// várias instâncias não façam polling em sincronia).
 type Loop struct {
 	name     string
 	interval time.Duration
@@ -28,13 +28,13 @@ type Loop struct {
 	done   chan struct{}
 }
 
-// NewLoop builds a loop; it does nothing until Start.
+// NewLoop constrói um loop; não faz nada até Start.
 func NewLoop(name string, interval time.Duration, log *slog.Logger, fn func(ctx context.Context) (int, error)) *Loop {
 	return &Loop{name: name, interval: interval, fn: fn, log: log.With("worker", name)}
 }
 
-// Start launches the loop goroutine. The ctx passed by fx to OnStart is
-// only valid during startup, so the loop owns a separate context.
+// Start lança a goroutine do loop. O ctx passado pelo fx ao OnStart é
+// válido apenas durante a inicialização, portanto o loop possui seu próprio contexto.
 func (l *Loop) Start(context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -71,9 +71,9 @@ func (l *Loop) run(ctx context.Context) {
 	}
 }
 
-// Stop cancels the loop and waits for the current iteration to finish, or
-// for ctx to expire. Work interrupted by cancellation is left in a state
-// another instance can resume (leases expire, transactions roll back).
+// Stop cancela o loop e aguarda a iteração atual terminar, ou o ctx expirar.
+// O trabalho interrompido pelo cancelamento é deixado em um estado que outra
+// instância pode retomar (leases expiram, transações fazem rollback).
 func (l *Loop) Stop(ctx context.Context) error {
 	l.mu.Lock()
 	cancel, done := l.cancel, l.done
@@ -92,7 +92,7 @@ func (l *Loop) Stop(ctx context.Context) error {
 	}
 }
 
-// Done is closed when the loop goroutine has exited.
+// Done é fechado quando a goroutine do loop terminou.
 func (l *Loop) Done() <-chan struct{} {
 	l.mu.Lock()
 	defer l.mu.Unlock()

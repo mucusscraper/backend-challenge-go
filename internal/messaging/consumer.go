@@ -20,36 +20,36 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/observability"
 )
 
-// Outcome of handling one message.
+// Outcome é o resultado do processamento de uma mensagem.
 type Outcome string
 
-// Handling outcomes.
+// Resultados possíveis de processamento.
 const (
-	// OutcomeAck: durable handling committed (processed, rejected, pending
-	// or duplicate); the message is deleted.
+	// OutcomeAck: processamento durável confirmado (processado, rejeitado, pendente
+	// ou duplicado); a mensagem é deletada.
 	OutcomeAck Outcome = "ack"
-	// OutcomeRetry: transient failure; visibility is set to a backoff delay
-	// and SQS redelivers. After maxReceiveCount the redrive policy moves the
-	// message to the DLQ.
+	// OutcomeRetry: falha transiente; a visibilidade é definida com um atraso de
+	// backoff e o SQS reenvia. Após maxReceiveCount, a redrive policy move a
+	// mensagem para a DLQ.
 	OutcomeRetry Outcome = "retry"
-	// OutcomeDLQ: permanent failure; the message is copied to the DLQ with
-	// the reason and deleted from the source queue.
+	// OutcomeDLQ: falha permanente; a mensagem é copiada para a DLQ com
+	// o motivo e deletada da fila de origem.
 	OutcomeDLQ Outcome = "dlq"
-	// OutcomeRelease: shutdown interrupted handling; visibility is reset to
-	// 0 so another instance picks it up immediately.
+	// OutcomeRelease: o desligamento interrompeu o processamento; a visibilidade
+	// é redefinida para 0 para que outra instância a processe imediatamente.
 	OutcomeRelease Outcome = "release"
 )
 
-// Consumer long-polls the inbound queue and hands messages to the shared
-// WageringService use case.
+// Consumer faz long-polling da fila de entrada e repassa mensagens ao caso de
+// uso compartilhado WageringService.
 //
-// Guarantees:
-//   - a message is deleted only after the SQL transaction containing its
-//     inbox record and financial effects has committed;
-//   - a redelivery (crash after commit, before delete) hits the inbox and is
-//     acknowledged without reapplying anything;
-//   - on shutdown, polling stops first; in-flight messages get until the
-//     stop deadline to finish, otherwise their visibility is released.
+// Garantias:
+//   - uma mensagem só é deletada após o commit da transação SQL que contém
+//     seu registro de inbox e os efeitos financeiros;
+//   - uma reentrega (crash após commit, antes do delete) acessa o inbox e é
+//     confirmada sem reaplicar nada;
+//   - no desligamento, o polling para primeiro; mensagens em andamento têm
+//     até o prazo de stop para terminar; caso contrário, sua visibilidade é liberada.
 type Consumer struct {
 	api     API
 	queues  *Queues
@@ -58,9 +58,9 @@ type Consumer struct {
 	log     *slog.Logger
 	metrics *observability.Metrics
 
-	// AfterCommit is a test hook called after Submit committed and before
-	// the message is deleted. Returning an error simulates a crash at that
-	// exact point (the message is left in flight and will be redelivered).
+	// AfterCommit é um hook de teste chamado após o commit do Submit e antes
+	// da deleção da mensagem. Retornar um erro simula um crash nesse ponto
+	// exato (a mensagem fica em andamento e será reenviada).
 	AfterCommit func(messageID string) error
 
 	mu         sync.Mutex
@@ -70,13 +70,13 @@ type Consumer struct {
 	started    bool
 }
 
-// NewConsumer builds the consumer.
+// NewConsumer constrói o consumer.
 func NewConsumer(api API, queues *Queues, svc *app.WageringService, cfg config.SQSConfig, log *slog.Logger,
 	metrics *observability.Metrics) *Consumer {
 	return &Consumer{api: api, queues: queues, svc: svc, cfg: cfg, log: log.With("worker", "sqs-consumer"), metrics: metrics}
 }
 
-// Start launches cfg.Pollers polling goroutines.
+// Start lança cfg.Pollers goroutines de polling.
 func (c *Consumer) Start(context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -94,9 +94,9 @@ func (c *Consumer) Start(context.Context) error {
 	return nil
 }
 
-// Stop stops fetching new messages and waits for in-flight handling. If ctx
-// expires first, in-flight handlers are cancelled (their transactions roll
-// back) and their messages are released for immediate redelivery.
+// Stop para de buscar novas mensagens e aguarda o processamento em andamento.
+// Se ctx expirar primeiro, os handlers em andamento são cancelados (suas
+// transações fazem rollback) e suas mensagens são liberadas para reentrega imediata.
 func (c *Consumer) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	if !c.started {
@@ -115,7 +115,7 @@ func (c *Consumer) Stop(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		c.workCancel()
-		// Give cancelled handlers a moment to release visibility.
+		// Dá um momento para os handlers cancelados liberarem a visibilidade.
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
@@ -158,8 +158,8 @@ func (c *Consumer) poll(pollCtx, workCtx context.Context) {
 	}
 }
 
-// handleBatch processes messages of the same MessageGroupId sequentially
-// (preserving FIFO order per wallet) and different groups concurrently.
+// handleBatch processa mensagens do mesmo MessageGroupId sequencialmente
+// (preservando a ordem FIFO por carteira) e grupos diferentes de forma concorrente.
 func (c *Consumer) handleBatch(ctx context.Context, msgs []types.Message) {
 	groups := map[string][]types.Message{}
 	var order []string
@@ -183,8 +183,8 @@ func (c *Consumer) handleBatch(ctx context.Context, msgs []types.Message) {
 	wg.Wait()
 }
 
-// HandleMessage processes one message end to end and applies the outcome
-// (delete / retry with backoff / DLQ / release). Exported for tests.
+// HandleMessage processa uma mensagem de ponta a ponta e aplica o resultado
+// (delete / retry com backoff / DLQ / release). Exportado para testes.
 func (c *Consumer) HandleMessage(workCtx context.Context, m types.Message) Outcome {
 	receivedAt := time.Now().UTC()
 	receiveCount, _ := strconv.Atoi(m.Attributes[string(types.MessageSystemAttributeNameApproximateReceiveCount)])
@@ -194,7 +194,7 @@ func (c *Consumer) HandleMessage(workCtx context.Context, m types.Message) Outco
 	if outcome == OutcomeRetry && workCtx.Err() != nil {
 		outcome = OutcomeRelease
 	}
-	// Broker bookkeeping must not be cancelled by shutdown.
+	// Operações de broker não devem ser canceladas pelo desligamento.
 	bk, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	switch outcome {
@@ -220,7 +220,7 @@ func (c *Consumer) HandleMessage(workCtx context.Context, m types.Message) Outco
 	return outcome
 }
 
-// process maps the use-case result to an outcome.
+// process mapeia o resultado do caso de uso para um outcome.
 func (c *Consumer) process(ctx context.Context, m types.Message, receivedAt time.Time) (Outcome, string, error) {
 	parsed, err := ParseInbound(aws.ToString(m.Body))
 	if err != nil {
@@ -253,8 +253,8 @@ func (c *Consumer) process(ctx context.Context, m types.Message, receivedAt time
 	})
 	switch {
 	case err == nil:
-		// PROCESSED, REJECTED (terminal business outcome), PENDING_REFERENCE
-		// (the worker takes over) or duplicate: all durable -> delete.
+		// PROCESSED, REJECTED (resultado de negócio terminal), PENDING_REFERENCE
+		// (o worker assume) ou duplicado: todos duráveis -> delete.
 		return OutcomeAck, "", nil
 	case errors.Is(err, app.ErrIdempotencyConflict):
 		return OutcomeDLQ, "idempotency_conflict", err
@@ -267,13 +267,13 @@ func (c *Consumer) process(ctx context.Context, m types.Message, receivedAt time
 	case errors.Is(err, domain.ErrInvalidArgument):
 		return OutcomeDLQ, "validation", err
 	default:
-		// Transient (DB down, lock timeout) or unknown: retry with backoff;
-		// the redrive policy bounds the attempts and ends in the DLQ.
+		// Transiente (BD indisponível, timeout de lock) ou desconhecido: retry com backoff;
+		// a redrive policy limita as tentativas e termina na DLQ.
 		return OutcomeRetry, "", err
 	}
 }
 
-// retryDelay is exponential in the receive count, capped.
+// retryDelay é exponencial em relação ao receiveCount, com limite máximo.
 func (c *Consumer) retryDelay(receiveCount int) time.Duration {
 	d := c.cfg.RetryBaseDelay
 	for i := 1; i < receiveCount && d < c.cfg.RetryMaxDelay; i++ {
@@ -287,7 +287,7 @@ func (c *Consumer) delete(ctx context.Context, m types.Message) {
 		QueueUrl: aws.String(c.queues.Inbound), ReceiptHandle: m.ReceiptHandle,
 	})
 	if err != nil {
-		// Safe: the redelivery will hit the inbox and be acknowledged.
+		// Seguro: a reentrega acessará o inbox e será confirmada.
 		c.log.WarnContext(ctx, "delete failed; message will be redelivered and deduplicated", "error", err)
 	}
 }
@@ -301,10 +301,10 @@ func (c *Consumer) changeVisibility(ctx context.Context, m types.Message, d time
 	}
 }
 
-// toDLQ copies a permanently failing message to the DLQ (with the failure
-// reason as attributes) and deletes it from the source queue. If the process
-// dies between both calls the message is redelivered and copied again; the
-// DLQ deduplication id (source SQS MessageId) absorbs the duplicate.
+// toDLQ copia uma mensagem com falha permanente para a DLQ (com o motivo da
+// falha como atributos) e a deleta da fila de origem. Se o processo morrer
+// entre as duas chamadas, a mensagem é reenviada e copiada novamente; o id de
+// deduplicação da DLQ (MessageId SQS de origem) absorve a duplicata.
 func (c *Consumer) toDLQ(ctx context.Context, m types.Message, reason string, cause error) {
 	group := m.Attributes[string(types.MessageSystemAttributeNameMessageGroupId)]
 	if group == "" {

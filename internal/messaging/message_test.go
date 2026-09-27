@@ -36,8 +36,8 @@ func TestParseInboundValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Same operation through HTTP builds the same RawExternalRequest, so the
-	// business hash is identical (HTTP/SQS equivalence).
+	// A mesma operação via HTTP constrói o mesmo RawExternalRequest, portanto
+	// o hash de negócio é idêntico (equivalência HTTP/SQS).
 	fromHTTP := p.Raw
 	httpReq, _ := domain.NewExternalRequest(fromHTTP)
 	if req.PayloadHash() != httpReq.PayloadHash() {

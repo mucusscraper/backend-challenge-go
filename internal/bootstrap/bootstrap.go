@@ -1,25 +1,25 @@
-// Package bootstrap composes the application with Uber Fx.
+// Package bootstrap compõe a aplicação com Uber Fx.
 //
-// Modules:
+// Módulos:
 //
-//	core     config validation, JSON logger, metrics
-//	postgres pgx pool (+ lifecycle), unit of work, outbox store
-//	sqs      SQS client, queue resolution (+ lifecycle), event publisher
-//	app      use cases (wagering, wallets) and their policies
-//	auth     OIDC token verifier
-//	http     handlers and server
-//	workers  SQS consumer, outbox relay, pending-reference loop
+//	core     validação de config, logger JSON, métricas
+//	postgres pool pgx (+ ciclo de vida), unit of work, outbox store
+//	sqs      cliente SQS, resolução de filas (+ ciclo de vida), publisher de eventos
+//	app      casos de uso (wagering, wallets) e suas políticas
+//	auth     verifier de token OIDC
+//	http     handlers e servidor
+//	workers  consumidor SQS, relay do outbox, loop de referências pendentes
 //
-// Lifecycle order (fx runs OnStart in registration order and OnStop in
-// reverse):
+// Ordem do ciclo de vida (fx executa OnStart na ordem de registro e OnStop na
+// ordem inversa):
 //
-//	start: postgres ready -> queues resolved -> workers -> HTTP server
-//	stop:  HTTP server (stop intake, drain requests) -> SQS consumer (stop
-//	       polling, finish or release in-flight messages) -> outbox relay ->
-//	       pending worker -> postgres pool closed last
+//	start: postgres pronto -> filas resolvidas -> workers -> servidor HTTP
+//	stop:  servidor HTTP (parar recebimento, drenar requisições) -> consumidor SQS (parar
+//	       polling, terminar ou liberar mensagens em andamento) -> relay do outbox ->
+//	       worker de pendentes -> pool do postgres fechado por último
 //
-// Dependencies are therefore closed only after every component using them
-// has finished.
+// As dependências são fechadas apenas após todo componente que as usa ter
+// terminado.
 package bootstrap
 
 import (
@@ -42,8 +42,8 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/worker"
 )
 
-// CoreModule provides logging and metrics. The Config itself is supplied by
-// the caller (config.Load in main, a test config in tests).
+// CoreModule fornece logging e métricas. O Config em si é fornecido pelo
+// chamador (config.Load no main, um config de teste nos testes).
 var CoreModule = fx.Module("core",
 	fx.Provide(
 		func(cfg config.Config) *slog.Logger { return observability.NewLogger(cfg.LogLevel, cfg.InstanceID) },
@@ -59,7 +59,7 @@ var CoreModule = fx.Module("core",
 	fx.Invoke(func(cfg config.Config) error { return cfg.Validate() }),
 )
 
-// PostgresModule provides the pool and repositories.
+// PostgresModule fornece o pool e os repositórios.
 var PostgresModule = fx.Module("postgres",
 	fx.Provide(
 		newPool,
@@ -68,8 +68,8 @@ var PostgresModule = fx.Module("postgres",
 	),
 )
 
-// newPool creates the pool and registers its lifecycle: wait until the
-// database answers on start, close on stop.
+// newPool cria o pool e registra seu ciclo de vida: espera até o banco
+// responder no início, fecha ao parar.
 func newPool(lc fx.Lifecycle, cfg config.PostgresConfig, log *slog.Logger) (*pgxpool.Pool, error) {
 	pool, err := postgres.NewPool(cfg)
 	if err != nil {
@@ -88,7 +88,7 @@ func newPool(lc fx.Lifecycle, cfg config.PostgresConfig, log *slog.Logger) (*pgx
 	return pool, nil
 }
 
-// SQSModule provides the broker client and publisher.
+// SQSModule fornece o cliente do broker e o publisher.
 var SQSModule = fx.Module("sqs",
 	fx.Provide(
 		fx.Annotate(func(cfg config.AWSConfig) (messaging.API, error) {
@@ -107,7 +107,7 @@ func newQueues(lc fx.Lifecycle, api messaging.API, cfg config.Config, log *slog.
 	return q
 }
 
-// AppModule provides the use cases.
+// AppModule fornece os casos de uso.
 var AppModule = fx.Module("app",
 	fx.Provide(
 		func() app.Clock { return app.SystemClock },
@@ -122,10 +122,10 @@ var AppModule = fx.Module("app",
 	),
 )
 
-// AuthModule provides the token verifier.
+// AuthModule fornece o verifier de token.
 var AuthModule = fx.Module("auth", fx.Provide(auth.NewVerifier))
 
-// HTTPModule provides the handlers and server.
+// HTTPModule fornece os handlers e o servidor.
 var HTTPModule = fx.Module("http",
 	fx.Provide(
 		httpapi.NewHandlers,
@@ -139,7 +139,7 @@ var HTTPModule = fx.Module("http",
 	),
 )
 
-// Workers groups the background components.
+// Workers agrupa os componentes em background.
 type Workers struct {
 	Consumer *messaging.Consumer
 	Outbox   *worker.Loop
@@ -147,7 +147,7 @@ type Workers struct {
 	Pending  *worker.Loop
 }
 
-// WorkersModule provides the background workers.
+// WorkersModule fornece os workers em background.
 var WorkersModule = fx.Module("workers",
 	fx.Provide(
 		messaging.NewConsumer,
@@ -167,8 +167,8 @@ var WorkersModule = fx.Module("workers",
 	),
 )
 
-// registerLifecycle appends the start/stop hooks of the entry points in an
-// explicit order (see package documentation).
+// registerLifecycle adiciona os hooks de início/parada dos pontos de entrada em
+// uma ordem explícita (veja a documentação do pacote).
 func registerLifecycle(lc fx.Lifecycle, cfg config.Config, w *Workers, srv *httpapi.Server,
 	_ *pgxpool.Pool, _ *messaging.Queues) {
 	if cfg.Pending.Enabled {
@@ -183,8 +183,8 @@ func registerLifecycle(lc fx.Lifecycle, cfg config.Config, w *Workers, srv *http
 	lc.Append(fx.Hook{OnStart: srv.Start, OnStop: srv.Stop})
 }
 
-// Options returns the whole application graph. cfg is supplied by the
-// caller; extra options (e.g. fx.Populate in tests) are appended.
+// Options retorna o grafo completo da aplicação. cfg é fornecido pelo
+// chamador; opções extras (ex.: fx.Populate nos testes) são adicionadas.
 func Options(cfg config.Config, extra ...fx.Option) fx.Option {
 	opts := []fx.Option{
 		fx.Supply(cfg),

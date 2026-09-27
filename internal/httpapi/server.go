@@ -18,13 +18,13 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/observability"
 )
 
-// ReadinessCheck is a named dependency probe used by /health/ready.
+// ReadinessCheck é uma sonda de dependência nomeada usada por /health/ready.
 type ReadinessCheck struct {
 	Name  string
 	Check func(ctx context.Context) error
 }
 
-// Server is the HTTP server with fx-managed lifecycle.
+// Server é o servidor HTTP com ciclo de vida gerenciado pelo Fx.
 type Server struct {
 	srv      *http.Server
 	cfg      config.HTTPConfig
@@ -34,27 +34,27 @@ type Server struct {
 	done     chan struct{}
 }
 
-// NewServer builds the router and the server.
+// NewServer constrói o roteador e o servidor.
 func NewServer(cfg config.HTTPConfig, h *Handlers, verifier *auth.Verifier, metrics *observability.Metrics,
 	checks []ReadinessCheck, log *slog.Logger) *Server {
 	s := &Server{cfg: cfg, log: log}
 	mux := http.NewServeMux()
 
-	// Public endpoints.
+	// Endpoints públicos.
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "UP"})
 	})
 	mux.HandleFunc("GET /health/ready", s.ready(checks))
 	mux.Handle("GET /metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
 
-	// Internal wallet service.
+	// Serviço interno de carteiras.
 	operator := requireRole(verifier, func(p auth.Principal) bool { return p.IsWalletOperator() })
 	mux.Handle("POST /wallets", operator(http.HandlerFunc(h.openWallet)))
 	mux.Handle("GET /wallets/{walletId}", operator(http.HandlerFunc(h.getWallet)))
 	mux.Handle("GET /wallets/{walletId}/ledger", operator(http.HandlerFunc(h.getLedger)))
 	mux.Handle("POST /wallets/{walletId}/reconciliation", operator(http.HandlerFunc(h.reconcile)))
 
-	// Providers.
+	// Provedores.
 	provider := requireRole(verifier, func(p auth.Principal) bool { return p.IsProvider() })
 	anyone := requireRole(verifier, func(p auth.Principal) bool { return p.IsProvider() || p.IsWalletOperator() })
 	mux.Handle("POST /wagering/transactions", provider(http.HandlerFunc(h.submitTransaction)))
@@ -74,10 +74,10 @@ func NewServer(cfg config.HTTPConfig, h *Handlers, verifier *auth.Verifier, metr
 	return s
 }
 
-// Handler exposes the root handler (tests).
+// Handler expõe o handler raiz (testes).
 func (s *Server) Handler() http.Handler { return s.srv.Handler }
 
-// Addr returns the bound address once started.
+// Addr retorna o endereço vinculado após o início.
 func (s *Server) Addr() string {
 	if s.listener == nil {
 		return ""
@@ -85,8 +85,8 @@ func (s *Server) Addr() string {
 	return s.listener.Addr().String()
 }
 
-// Start binds the port synchronously (fails fast if unavailable) and
-// serves in the background.
+// Start vincula a porta de forma síncrona (falha imediatamente se indisponível)
+// e serve em segundo plano.
 func (s *Server) Start(context.Context) error {
 	ln, err := net.Listen("tcp", s.cfg.Addr)
 	if err != nil {
@@ -104,8 +104,8 @@ func (s *Server) Start(context.Context) error {
 	return nil
 }
 
-// Stop reports not-ready, stops accepting connections and waits for
-// in-flight requests (bounded by ctx).
+// Stop reporta not-ready, para de aceitar conexões e aguarda as requisições
+// em andamento (limitado pelo ctx).
 func (s *Server) Stop(ctx context.Context) error {
 	s.draining.Store(true)
 	err := s.srv.Shutdown(ctx)
@@ -144,7 +144,7 @@ func (s *Server) ready(checks []ReadinessCheck) http.HandlerFunc {
 	}
 }
 
-// --- middleware ----------------------------------------------------------------
+// --- middleware ---------------------------------------------------------------
 
 type correlationKey struct{}
 
@@ -153,8 +153,8 @@ func correlationID(ctx context.Context) string {
 	return v
 }
 
-// withCorrelation propagates X-Correlation-Id (or generates one) into the
-// context, the logs and the response.
+// withCorrelation propaga o X-Correlation-Id (ou gera um) no contexto,
+// nos logs e na resposta.
 func withCorrelation(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Correlation-Id")
@@ -198,8 +198,8 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
-// withAccessLog logs one line per request with identifiers only (no body,
-// no Authorization header).
+// withAccessLog registra uma linha por requisição com identificadores apenas
+// (sem corpo, sem cabeçalho Authorization).
 func withAccessLog(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -213,9 +213,9 @@ func withAccessLog(log *slog.Logger, next http.Handler) http.Handler {
 	})
 }
 
-// requireRole authenticates the bearer token and applies allow. Missing or
-// invalid tokens get 401; valid tokens without permission get 403. No
-// handler (hence no financial effect) runs in either case.
+// requireRole autentica o token bearer e aplica allow. Tokens ausentes ou
+// inválidos recebem 401; tokens válidos sem permissão recebem 403. Nenhum
+// handler (portanto nenhum efeito financeiro) é executado em ambos os casos.
 func requireRole(v *auth.Verifier, allow func(auth.Principal) bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

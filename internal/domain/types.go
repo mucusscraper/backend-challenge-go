@@ -1,9 +1,9 @@
 package domain
 
-// Kind is the type of a wager transaction.
+// Kind é o tipo de uma transação de aposta.
 type Kind string
 
-// Transaction kinds. OPENING is internal only; the others are external.
+// Tipos de transação. OPENING é somente interno; os demais são externos.
 const (
 	KindOpening  Kind = "OPENING"
 	KindBet      Kind = "BET"
@@ -13,8 +13,8 @@ const (
 	KindRollback Kind = "ROLLBACK"
 )
 
-// ParseExternalKind validates a kind received from a provider (HTTP or SQS).
-// OPENING is reserved for the internal wallet opening and is rejected.
+// ParseExternalKind valida um tipo recebido de um provedor (HTTP ou SQS).
+// OPENING é reservado para a abertura interna de carteiras e é rejeitado.
 func ParseExternalKind(s string) (Kind, error) {
 	switch k := Kind(s); k {
 	case KindBet, KindWin, KindLoss, KindRefund, KindRollback:
@@ -26,7 +26,7 @@ func ParseExternalKind(s string) (Kind, error) {
 	}
 }
 
-// ParseKind validates any kind, including OPENING (used on rehydration).
+// ParseKind valida qualquer tipo, incluindo OPENING (usado na reidratação).
 func ParseKind(s string) (Kind, error) {
 	if Kind(s) == KindOpening {
 		return KindOpening, nil
@@ -34,27 +34,27 @@ func ParseKind(s string) (Kind, error) {
 	return ParseExternalKind(s)
 }
 
-// RequiresReference reports whether the kind always needs a reference.
+// RequiresReference informa se o tipo sempre precisa de uma referência.
 func (k Kind) RequiresReference() bool {
 	return k == KindRefund || k == KindRollback
 }
 
-// IsReversal reports whether the kind reverses a previous transaction.
+// IsReversal informa se o tipo reverte uma transação anterior.
 func (k Kind) IsReversal() bool { return k.RequiresReference() }
 
-// Status is the lifecycle state of a wager transaction.
+// Status é o estado do ciclo de vida de uma transação de aposta.
 //
-// State machine (all other transitions are rejected):
+// Máquina de estados (todas as outras transições são rejeitadas):
 //
 //	PENDING ──────────────┬──> PROCESSED  (terminal)
 //	   │                  ├──> REJECTED   (terminal)
 //	   v                  └──> FAILED     (terminal)
 //	PENDING_REFERENCE ────┘
 //	   ^  │
-//	   └──┘ (reschedule: attempts++ / next attempt moved forward)
+//	   └──┘ (reagendar: attempts++ / próxima tentativa avança)
 type Status string
 
-// Transaction statuses.
+// Status das transações.
 const (
 	StatusPending          Status = "PENDING"
 	StatusPendingReference Status = "PENDING_REFERENCE"
@@ -63,7 +63,7 @@ const (
 	StatusFailed           Status = "FAILED"
 )
 
-// ParseStatus validates a status string (rehydration).
+// ParseStatus valida uma string de status (reidratação).
 func ParseStatus(s string) (Status, error) {
 	switch st := Status(s); st {
 	case StatusPending, StatusPendingReference, StatusProcessed, StatusRejected, StatusFailed:
@@ -73,21 +73,21 @@ func ParseStatus(s string) (Status, error) {
 	}
 }
 
-// IsTerminal reports whether no further transition is allowed.
+// IsTerminal informa se nenhuma transição adicional é permitida.
 func (s Status) IsTerminal() bool {
 	return s == StatusProcessed || s == StatusRejected || s == StatusFailed
 }
 
-// Direction is the side of a ledger entry.
+// Direction é o lado de uma entrada do ledger.
 type Direction string
 
-// Ledger directions.
+// Direções do ledger.
 const (
 	DirectionDebit  Direction = "DEBIT"
 	DirectionCredit Direction = "CREDIT"
 )
 
-// ParseDirection validates a direction string (rehydration).
+// ParseDirection valida uma string de direção (reidratação).
 func ParseDirection(s string) (Direction, error) {
 	switch d := Direction(s); d {
 	case DirectionDebit, DirectionCredit:
@@ -97,7 +97,7 @@ func ParseDirection(s string) (Direction, error) {
 	}
 }
 
-// Opposite returns the reverse direction (used by ROLLBACK).
+// Opposite retorna a direção inversa (usada pelo ROLLBACK).
 func (d Direction) Opposite() Direction {
 	if d == DirectionDebit {
 		return DirectionCredit
@@ -105,11 +105,11 @@ func (d Direction) Opposite() Direction {
 	return DirectionDebit
 }
 
-// Origin distinguishes internally created transactions (OPENING) from
-// external provider operations.
+// Origin distingue transações criadas internamente (OPENING) de operações
+// externas de provedores.
 type Origin string
 
-// Transaction origins.
+// Origens das transações.
 const (
 	OriginInternal Origin = "INTERNAL"
 	OriginExternal Origin = "EXTERNAL"

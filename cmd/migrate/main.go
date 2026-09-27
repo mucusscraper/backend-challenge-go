@@ -1,13 +1,13 @@
-// Command migrate applies or reverts the database migrations.
+// Command migrate aplica ou reverte as migrações do banco de dados.
 //
-// Usage:
+// Uso:
 //
-//	migrate up            apply all pending migrations
-//	migrate down          revert the latest migration
-//	migrate down-to N     revert down to version N (0 = everything)
-//	migrate status        list migrations and their state
+//	migrate up            aplica todas as migrações pendentes
+//	migrate down          reverte a migração mais recente
+//	migrate down-to N     reverte até a versão N (0 = tudo)
+//	migrate status        lista as migrações e seus estados
 //
-// The DSN comes from MIGRATION_DATABASE_URL (owner role), falling back to
+// O DSN vem de MIGRATION_DATABASE_URL (role owner), com fallback para
 // DATABASE_URL.
 package main
 
@@ -85,7 +85,7 @@ func run(args []string) error {
 	return nil
 }
 
-// waitDB retries until the database accepts connections.
+// waitDB tenta repetidamente até o banco de dados aceitar conexões.
 func waitDB(ctx context.Context, m *postgres.Migrator) error {
 	for {
 		err := m.Ping(ctx)

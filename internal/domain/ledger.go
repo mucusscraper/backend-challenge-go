@@ -8,13 +8,14 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/domain/money"
 )
 
-// LedgerEntry is one immutable line of a wallet's append-only ledger. Every
-// balance change has exactly one entry, persisted in the same SQL transaction
-// as the new balance. Corrections are made with new entries (e.g. a ROLLBACK),
-// never by editing existing ones; the database enforces this with triggers.
+// LedgerEntry é uma linha imutável do ledger append-only de uma carteira.
+// Toda mudança de saldo tem exatamente uma entrada, persistida na mesma
+// transação SQL que o novo saldo. Correções são feitas com novas entradas
+// (ex.: um ROLLBACK), nunca editando as existentes; o banco aplica isso com
+// triggers.
 //
-// All fields are unexported and there are no setters: once built an entry
-// cannot change.
+// Todos os campos são não exportados e não há setters: uma vez construída,
+// uma entrada não pode mudar.
 type LedgerEntry struct {
 	id            uuid.UUID
 	walletID      uuid.UUID
@@ -27,7 +28,7 @@ type LedgerEntry struct {
 	createdAt     time.Time
 }
 
-// LedgerEntryParams groups the attributes of a ledger entry.
+// LedgerEntryParams agrupa os atributos de uma entrada do ledger.
 type LedgerEntryParams struct {
 	ID            uuid.UUID
 	WalletID      uuid.UUID
@@ -36,20 +37,20 @@ type LedgerEntryParams struct {
 	Amount        money.Money
 	BalanceBefore money.Money
 	BalanceAfter  money.Money
-	// WalletVersion is the wallet version produced by this entry. It lets
-	// the database detect forks/lost updates via UNIQUE(wallet_id, version).
+	// WalletVersion é a versão da carteira produzida por esta entrada. Permite
+	// que o banco detecte forks/lost updates via UNIQUE(wallet_id, version).
 	WalletVersion int64
 	CreatedAt     time.Time
 }
 
-// NewLedgerEntry validates and builds an entry. It enforces:
-//   - non-nil identifiers, a known direction and a positive amount;
-//   - one currency for amount, balanceBefore and balanceAfter;
-//   - non-negative balances;
-//   - balanceAfter = balanceBefore + amount (CREDIT) or - amount (DEBIT).
+// NewLedgerEntry valida e constrói uma entrada. Aplica:
+//   - identificadores não nulos, uma direção conhecida e um valor positivo;
+//   - uma única moeda para amount, balanceBefore e balanceAfter;
+//   - saldos não negativos;
+//   - balanceAfter = balanceBefore + amount (CREDIT) ou - amount (DEBIT).
 //
-// The same function is used for rehydration, since an entry has no
-// behaviour to replay: validation is all there is.
+// A mesma função é usada para reidratação, pois uma entrada não tem
+// comportamento a repetir: a validação é tudo.
 func NewLedgerEntry(p LedgerEntryParams) (LedgerEntry, error) {
 	if p.ID == uuid.Nil || p.WalletID == uuid.Nil || p.TransactionID == uuid.Nil {
 		return LedgerEntry{}, invalidArg("ledger entry identifiers are required")
@@ -99,35 +100,35 @@ func NewLedgerEntry(p LedgerEntryParams) (LedgerEntry, error) {
 	}, nil
 }
 
-// ID returns the entry identifier.
+// ID retorna o identificador da entrada.
 func (e LedgerEntry) ID() uuid.UUID { return e.id }
 
-// WalletID returns the wallet the entry belongs to.
+// WalletID retorna a carteira à qual a entrada pertence.
 func (e LedgerEntry) WalletID() uuid.UUID { return e.walletID }
 
-// TransactionID returns the transaction that produced the entry.
+// TransactionID retorna a transação que produziu a entrada.
 func (e LedgerEntry) TransactionID() uuid.UUID { return e.transactionID }
 
-// Direction returns DEBIT or CREDIT.
+// Direction retorna DEBIT ou CREDIT.
 func (e LedgerEntry) Direction() Direction { return e.direction }
 
-// Amount returns the (positive) moved amount.
+// Amount retorna o valor (positivo) movimentado.
 func (e LedgerEntry) Amount() money.Money { return e.amount }
 
-// BalanceBefore returns the wallet balance before the entry.
+// BalanceBefore retorna o saldo da carteira antes da entrada.
 func (e LedgerEntry) BalanceBefore() money.Money { return e.balanceBefore }
 
-// BalanceAfter returns the wallet balance after the entry.
+// BalanceAfter retorna o saldo da carteira após a entrada.
 func (e LedgerEntry) BalanceAfter() money.Money { return e.balanceAfter }
 
-// WalletVersion returns the wallet version produced by the entry.
+// WalletVersion retorna a versão da carteira produzida pela entrada.
 func (e LedgerEntry) WalletVersion() int64 { return e.walletVersion }
 
-// CreatedAt returns the entry timestamp (UTC).
+// CreatedAt retorna o timestamp da entrada (UTC).
 func (e LedgerEntry) CreatedAt() time.Time { return e.createdAt }
 
-// SignedAmount returns +amount for credits and -amount for debits; it is
-// used by reconciliation to rebuild the balance.
+// SignedAmount retorna +amount para créditos e -amount para débitos; é
+// usado pela reconciliação para reconstruir o saldo.
 func (e LedgerEntry) SignedAmount() (money.Money, error) {
 	if e.direction == DirectionCredit {
 		return e.amount, nil

@@ -10,14 +10,14 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/observability"
 )
 
-// OutboxRelay publishes committed outbox events to the broker.
+// OutboxRelay publica eventos de outbox confirmados para o broker.
 //
-// Delivery is at-least-once:
-//   - crash after commit, before publish: the row stays unpublished and is
-//     claimed again (by this or another instance) once due / lease expired;
-//   - crash after publish, before confirmation: the lease expires, the row is
-//     republished with the SAME eventId (stored in the snapshot), and the
-//     broker (FIFO MessageDeduplicationId = eventId) and consumers dedupe.
+// A entrega é at-least-once:
+//   - crash após commit, antes da publicação: a linha fica não publicada e é
+//     reivindicada novamente (por esta ou outra instância) quando devida / lease expirado;
+//   - crash após publicação, antes da confirmação: o lease expira, a linha é
+//     republicada com o MESMO eventId (armazenado no snapshot) e o broker
+//     (FIFO MessageDeduplicationId = eventId) e os consumidores deduplicam.
 type OutboxRelay struct {
 	store     app.OutboxStore
 	publisher app.EventPublisher
@@ -26,20 +26,19 @@ type OutboxRelay struct {
 	log       *slog.Logger
 	metrics   *observability.Metrics
 
-	// BeforeConfirm is a test hook invoked after a successful publish and
-	// before the confirmation is written. Returning an error simulates a
-	// crash between publication and confirmation.
+	// BeforeConfirm é um hook de teste invocado após publicação bem-sucedida e
+	// antes da confirmação ser gravada. Retornar um erro simula um crash entre
+	// a publicação e a confirmação.
 	BeforeConfirm func(m app.OutboxMessage) error
 }
 
-// NewOutboxRelay builds the relay; owner identifies the instance in leases.
+// NewOutboxRelay constrói o relay; owner identifica a instância nos leases.
 func NewOutboxRelay(store app.OutboxStore, publisher app.EventPublisher, cfg config.OutboxConfig, owner string,
 	log *slog.Logger, metrics *observability.Metrics) *OutboxRelay {
 	return &OutboxRelay{store: store, publisher: publisher, cfg: cfg, owner: owner, log: log.With("worker", "outbox"), metrics: metrics}
 }
 
-// RunOnce claims and publishes one batch. It returns how many events were
-// claimed.
+// RunOnce reivindica e publica um lote. Retorna quantos eventos foram reivindicados.
 func (r *OutboxRelay) RunOnce(ctx context.Context) (int, error) {
 	if lag, err := r.store.Lag(ctx); err == nil {
 		r.metrics.OutboxLag.Set(lag.Seconds())
@@ -50,7 +49,7 @@ func (r *OutboxRelay) RunOnce(ctx context.Context) (int, error) {
 	}
 	for _, m := range batch {
 		if ctx.Err() != nil {
-			// Remaining claimed rows are recovered when the lease expires.
+			// As linhas reivindicadas restantes são recuperadas quando o lease expira.
 			return len(batch), nil
 		}
 		r.publishOne(ctx, m)
@@ -63,8 +62,8 @@ func (r *OutboxRelay) publishOne(ctx context.Context, m app.OutboxMessage) {
 	pubCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	err := r.publisher.Publish(pubCtx, m)
 	cancel()
-	// Bookkeeping uses a context detached from shutdown so a successful
-	// publication is confirmed even while the worker is stopping.
+	// Operações de bookkeeping usam um contexto desvinculado do desligamento para
+	// que uma publicação bem-sucedida seja confirmada mesmo enquanto o worker para.
 	bk, bkCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer bkCancel()
 	if err != nil {
@@ -91,7 +90,7 @@ func (r *OutboxRelay) publishOne(ctx context.Context, m app.OutboxMessage) {
 	log.Debug("outbox event published")
 }
 
-// backoff is exponential in the number of attempts, capped at MaxBackoff.
+// backoff é exponencial em relação ao número de tentativas, limitado por MaxBackoff.
 func (r *OutboxRelay) backoff(attempts int) time.Duration {
 	d := r.cfg.BaseBackoff
 	for i := 1; i < attempts && d < r.cfg.MaxBackoff; i++ {
@@ -103,12 +102,12 @@ func (r *OutboxRelay) backoff(attempts int) time.Duration {
 	return d
 }
 
-// NewOutboxLoop wraps the relay into a Loop.
+// NewOutboxLoop envolve o relay em um Loop.
 func NewOutboxLoop(r *OutboxRelay, cfg config.OutboxConfig, log *slog.Logger) *Loop {
 	return NewLoop("outbox-relay", cfg.PollInterval, log, r.RunOnce)
 }
 
-// NewPendingLoop runs the pending-reference resolver periodically.
+// NewPendingLoop executa o resolvedor de referências pendentes periodicamente.
 func NewPendingLoop(svc *app.WageringService, cfg config.PendingConfig, log *slog.Logger) *Loop {
 	return NewLoop("pending-references", cfg.PollInterval, log, func(ctx context.Context) (int, error) {
 		return svc.ResumeDue(ctx, cfg.BatchSize)

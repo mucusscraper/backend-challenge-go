@@ -8,11 +8,10 @@ import (
 	"github.com/mucusscraper/backend-challenge-go/internal/domain/money"
 )
 
-// WagerTransaction records one financial operation: either the internal
-// OPENING credit of a wallet or an external provider operation (BET, WIN,
-// LOSS, REFUND, ROLLBACK). State is encapsulated; it changes only through
-// the Mark* transition methods, which validate the state machine documented
-// on Status.
+// WagerTransaction registra uma operação financeira: o crédito OPENING interno
+// de uma carteira ou uma operação externa de provedor (BET, WIN, LOSS, REFUND,
+// ROLLBACK). O estado é encapsulado; muda apenas pelos métodos de transição
+// Mark*, que validam a máquina de estados documentada em Status.
 type WagerTransaction struct {
 	id       uuid.UUID
 	origin   Origin
@@ -22,7 +21,7 @@ type WagerTransaction struct {
 	playerID uuid.UUID
 	money    money.Money
 
-	// External-only metadata (empty for OPENING).
+	// Metadados exclusivos de operações externas (vazio para OPENING).
 	providerID            string
 	externalTransactionID string
 	idempotencyKey        string
@@ -31,13 +30,13 @@ type WagerTransaction struct {
 	gameID                string
 	referenceExternalID   string
 
-	// Resolution / outcome.
-	referenceTransactionID uuid.UUID   // resolved internal reference (Nil if none)
-	failureCode            FailureCode // set on REJECTED / FAILED
-	resultBalance          money.Money // balance returned to the provider (valid when terminal)
+	// Resolução / resultado.
+	referenceTransactionID uuid.UUID   // referência interna resolvida (Nil se ausente)
+	failureCode            FailureCode // definido em REJECTED / FAILED
+	resultBalance          money.Money // saldo retornado ao provedor (válido quando terminal)
 	hasResultBalance       bool
 
-	// Retry bookkeeping for PENDING_REFERENCE.
+	// Bookkeeping de retry para PENDING_REFERENCE.
 	attempts         int
 	nextAttemptAt    time.Time
 	referenceExpires time.Time
@@ -48,8 +47,8 @@ type WagerTransaction struct {
 	processedAt   time.Time
 }
 
-// NewExternalTransaction creates a PENDING transaction from a validated
-// provider request.
+// NewExternalTransaction cria uma transação PENDING a partir de uma
+// requisição de provedor validada.
 func NewExternalTransaction(id uuid.UUID, req ExternalRequest, correlationID string, now time.Time) (*WagerTransaction, error) {
 	if id == uuid.Nil {
 		return nil, invalidArg("transaction id is required")
@@ -82,8 +81,8 @@ func NewExternalTransaction(id uuid.UUID, req ExternalRequest, correlationID str
 	}, nil
 }
 
-// newOpeningTransaction creates the internal OPENING credit, already
-// PROCESSED: it is committed atomically with the wallet itself.
+// newOpeningTransaction cria o crédito OPENING interno, já PROCESSED:
+// é commitado atomicamente com a própria carteira.
 func newOpeningTransaction(id uuid.UUID, w *Wallet, correlationID string, now time.Time) (*WagerTransaction, error) {
 	if id == uuid.Nil {
 		return nil, invalidArg("transaction id is required")
@@ -106,7 +105,7 @@ func newOpeningTransaction(id uuid.UUID, w *Wallet, correlationID string, now ti
 	}, nil
 }
 
-// TransactionSnapshot is the persisted state used by RehydrateTransaction.
+// TransactionSnapshot é o estado persistido usado por RehydrateTransaction.
 type TransactionSnapshot struct {
 	ID                             uuid.UUID
 	Origin                         Origin
@@ -134,8 +133,8 @@ type TransactionSnapshot struct {
 	ProcessedAt                    time.Time
 }
 
-// RehydrateTransaction rebuilds a transaction from storage. It validates the
-// snapshot's consistency but performs no transition and emits no events.
+// RehydrateTransaction reconstrói uma transação a partir do armazenamento.
+// Valida a consistência do snapshot mas não realiza transições e não emite eventos.
 func RehydrateTransaction(s TransactionSnapshot) (*WagerTransaction, error) {
 	if s.ID == uuid.Nil || s.WalletID == uuid.Nil || s.PlayerID == uuid.Nil {
 		return nil, invalidArg("transaction identifiers are required")
@@ -200,7 +199,7 @@ func RehydrateTransaction(s TransactionSnapshot) (*WagerTransaction, error) {
 	return t, nil
 }
 
-// --- transitions -----------------------------------------------------------
+// --- transições -----------------------------------------------------------
 
 func (t *WagerTransaction) ensureOpen(target Status) error {
 	if t.status.IsTerminal() {
@@ -213,23 +212,23 @@ func invalidTransition(from, to Status) error {
 	return &TransitionError{From: from, To: to}
 }
 
-// TransitionError describes a refused state transition. It matches
-// ErrInvalidTransition through errors.Is.
+// TransitionError descreve uma transição de estado recusada. Corresponde a
+// ErrInvalidTransition via errors.Is.
 type TransitionError struct {
 	From, To Status
 }
 
-// Error implements error.
+// Error implementa error.
 func (e *TransitionError) Error() string {
 	return "domain: invalid state transition " + string(e.From) + " -> " + string(e.To)
 }
 
-// Unwrap lets errors.Is(err, ErrInvalidTransition) succeed.
+// Unwrap faz errors.Is(err, ErrInvalidTransition) ter sucesso.
 func (e *TransitionError) Unwrap() error { return ErrInvalidTransition }
 
-// MarkPendingReference moves the transaction to PENDING_REFERENCE (or
-// reschedules it if already there). attempts is incremented on every call so
-// the retry budget survives restarts once persisted.
+// MarkPendingReference move a transação para PENDING_REFERENCE (ou a
+// reagenda se já estiver lá). attempts é incrementado a cada chamada para
+// que o orçamento de retry sobreviva a reinicializações após persistido.
 func (t *WagerTransaction) MarkPendingReference(nextAttemptAt, expiresAt, now time.Time) error {
 	if err := t.ensureOpen(StatusPendingReference); err != nil {
 		return err
@@ -250,8 +249,8 @@ func (t *WagerTransaction) MarkPendingReference(nextAttemptAt, expiresAt, now ti
 	return nil
 }
 
-// MarkProcessed concludes the transaction successfully, storing the balance
-// observed right after it (what replays return to the provider).
+// MarkProcessed conclui a transação com sucesso, armazenando o saldo
+// observado logo após ela (o que os replays retornam ao provedor).
 func (t *WagerTransaction) MarkProcessed(resultBalance money.Money, now time.Time) error {
 	if err := t.ensureOpen(StatusProcessed); err != nil {
 		return err
@@ -268,8 +267,8 @@ func (t *WagerTransaction) MarkProcessed(resultBalance money.Money, now time.Tim
 	return nil
 }
 
-// MarkRejected concludes the transaction with a business rejection. The
-// current wallet balance is stored so replays can report it.
+// MarkRejected conclui a transação com uma rejeição de negócio. O saldo
+// atual da carteira é armazenado para que os replays possam reportá-lo.
 func (t *WagerTransaction) MarkRejected(code FailureCode, observedBalance money.Money, now time.Time) error {
 	if err := t.ensureOpen(StatusRejected); err != nil {
 		return err
@@ -289,7 +288,7 @@ func (t *WagerTransaction) MarkRejected(code FailureCode, observedBalance money.
 	return nil
 }
 
-// MarkFailed records a permanent infrastructure failure for audit.
+// MarkFailed registra uma falha permanente de infraestrutura para auditoria.
 func (t *WagerTransaction) MarkFailed(code FailureCode, now time.Time) error {
 	if err := t.ensureOpen(StatusFailed); err != nil {
 		return err
@@ -305,89 +304,88 @@ func (t *WagerTransaction) MarkFailed(code FailureCode, now time.Time) error {
 	return nil
 }
 
-// resolveReference stores the internal id of the resolved reference.
+// resolveReference armazena o id interno da referência resolvida.
 func (t *WagerTransaction) resolveReference(id uuid.UUID) {
 	t.referenceTransactionID = id
 }
 
-// --- accessors -------------------------------------------------------------
+// --- acessores -------------------------------------------------------------
 
-// ID returns the internal identifier.
+// ID retorna o identificador interno.
 func (t *WagerTransaction) ID() uuid.UUID { return t.id }
 
-// Origin returns INTERNAL or EXTERNAL.
+// Origin retorna INTERNAL ou EXTERNAL.
 func (t *WagerTransaction) Origin() Origin { return t.origin }
 
-// Kind returns the operation kind.
+// Kind retorna o tipo da operação.
 func (t *WagerTransaction) Kind() Kind { return t.kind }
 
-// Status returns the current status.
+// Status retorna o status atual.
 func (t *WagerTransaction) Status() Status { return t.status }
 
-// WalletID returns the wallet identifier.
+// WalletID retorna o identificador da carteira.
 func (t *WagerTransaction) WalletID() uuid.UUID { return t.walletID }
 
-// PlayerID returns the player identifier.
+// PlayerID retorna o identificador do jogador.
 func (t *WagerTransaction) PlayerID() uuid.UUID { return t.playerID }
 
-// Money returns the operation amount.
+// Money retorna o valor da operação.
 func (t *WagerTransaction) Money() money.Money { return t.money }
 
-// ProviderID returns the provider ("" for OPENING).
+// ProviderID retorna o provedor ("" para OPENING).
 func (t *WagerTransaction) ProviderID() string { return t.providerID }
 
-// ExternalTransactionID returns the provider id of the operation.
+// ExternalTransactionID retorna o id da operação no provedor.
 func (t *WagerTransaction) ExternalTransactionID() string { return t.externalTransactionID }
 
-// IdempotencyKey returns the key used when the operation was received.
+// IdempotencyKey retorna a chave usada quando a operação foi recebida.
 func (t *WagerTransaction) IdempotencyKey() string { return t.idempotencyKey }
 
-// PayloadHash returns the canonical business hash.
+// PayloadHash retorna o hash canônico de negócio.
 func (t *WagerTransaction) PayloadHash() string { return t.payloadHash }
 
-// RoundID returns the round identifier.
+// RoundID retorna o identificador da rodada.
 func (t *WagerTransaction) RoundID() string { return t.roundID }
 
-// GameID returns the game identifier.
+// GameID retorna o identificador do jogo.
 func (t *WagerTransaction) GameID() string { return t.gameID }
 
-// ReferenceExternalTransactionID returns the external reference, if any.
+// ReferenceExternalTransactionID retorna a referência externa, se houver.
 func (t *WagerTransaction) ReferenceExternalTransactionID() string { return t.referenceExternalID }
 
-// ReferenceTransactionID returns the resolved internal reference (Nil if none).
+// ReferenceTransactionID retorna a referência interna resolvida (Nil se ausente).
 func (t *WagerTransaction) ReferenceTransactionID() uuid.UUID { return t.referenceTransactionID }
 
-// FailureCode returns the rejection/failure code ("" otherwise).
+// FailureCode retorna o código de rejeição/falha ("" caso contrário).
 func (t *WagerTransaction) FailureCode() FailureCode { return t.failureCode }
 
-// ResultBalance returns the balance reported to the provider and whether it
-// is set.
+// ResultBalance retorna o saldo reportado ao provedor e se está definido.
 func (t *WagerTransaction) ResultBalance() (money.Money, bool) {
 	return t.resultBalance, t.hasResultBalance
 }
 
-// Attempts returns how many times the reference resolution was attempted.
+// Attempts retorna quantas vezes a resolução da referência foi tentada.
 func (t *WagerTransaction) Attempts() int { return t.attempts }
 
-// NextAttemptAt returns when a PENDING_REFERENCE transaction is due.
+// NextAttemptAt retorna quando uma transação PENDING_REFERENCE está devida.
 func (t *WagerTransaction) NextAttemptAt() time.Time { return t.nextAttemptAt }
 
-// ReferenceExpiresAt returns the TTL deadline for the reference.
+// ReferenceExpiresAt retorna o prazo TTL para a referência.
 func (t *WagerTransaction) ReferenceExpiresAt() time.Time { return t.referenceExpires }
 
-// CorrelationID returns the correlation id of the originating request.
+// CorrelationID retorna o correlation id da requisição originadora.
 func (t *WagerTransaction) CorrelationID() string { return t.correlationID }
 
-// CreatedAt returns the creation instant.
+// CreatedAt retorna o instante de criação.
 func (t *WagerTransaction) CreatedAt() time.Time { return t.createdAt }
 
-// UpdatedAt returns the last change instant.
+// UpdatedAt retorna o instante da última mudança.
 func (t *WagerTransaction) UpdatedAt() time.Time { return t.updatedAt }
 
-// ProcessedAt returns when a terminal state was reached (zero otherwise).
+// ProcessedAt retorna quando um estado terminal foi atingido (zero caso contrário).
 func (t *WagerTransaction) ProcessedAt() time.Time { return t.processedAt }
 
-// SameRequest reports whether req has the same business payload.
+// SameRequest informa se req tem o mesmo payload de negócio.
 func (t *WagerTransaction) SameRequest(req ExternalRequest) bool {
 	return t.payloadHash == req.payloadHash
 }

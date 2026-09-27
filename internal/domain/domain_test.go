@@ -92,7 +92,7 @@ func eventTypes(evs []Event) []string {
 	return out
 }
 
-// --- wallet ----------------------------------------------------------------
+// --- carteira ---------------------------------------------------------------
 
 func TestWalletDebitCreditInvariants(t *testing.T) {
 	w := openWallet(t, "100.00")
@@ -187,7 +187,7 @@ func TestLedgerEntryArithmetic(t *testing.T) {
 	}
 }
 
-// --- opening ---------------------------------------------------------------
+// --- abertura ---------------------------------------------------------------
 
 func TestOpenWalletPositiveBalance(t *testing.T) {
 	o, err := OpenWallet(OpenWalletParams{
@@ -238,7 +238,7 @@ func TestOpenWalletZeroBalance(t *testing.T) {
 	}
 }
 
-// --- requests / idempotency hash -------------------------------------------
+// --- requisições / hash de idempotência ------------------------------------
 
 func TestExternalRequestValidation(t *testing.T) {
 	w := openWallet(t, "0.00")
@@ -272,7 +272,7 @@ func TestExternalRequestValidation(t *testing.T) {
 			t.Errorf("%s: expected ErrInvalidArgument, got %v", c.name, err)
 		}
 	}
-	// zero policy: LOSS accepts exactly zero
+	// política de zero: LOSS aceita exatamente zero
 	if _, err := NewExternalRequest(rawReq(w, KindLoss, "0.00")); err != nil {
 		t.Errorf("LOSS 0.00: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestPayloadHashCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Equivalent forms: normalised amount, upper-case UUID, other idempotency key.
+	// Formas equivalentes: valor normalizado, UUID em maiúsculas, outra chave de idempotência.
 	raw2 := raw
 	raw2.Amount = "25.00"
 	raw2.PlayerID = strings.ToUpper(raw.PlayerID)
@@ -318,7 +318,7 @@ func TestPayloadHashCanonical(t *testing.T) {
 	}
 }
 
-// --- state machine ---------------------------------------------------------
+// --- máquina de estados ----------------------------------------------------
 
 func TestTransitions(t *testing.T) {
 	w := openWallet(t, "10.00")
@@ -364,7 +364,7 @@ func TestMarkFailedRequiresCode(t *testing.T) {
 	}
 }
 
-// --- settlement rules ------------------------------------------------------
+// --- regras de liquidação --------------------------------------------------
 
 func TestBet(t *testing.T) {
 	w := openWallet(t, "100.00")
@@ -384,7 +384,7 @@ func TestBet(t *testing.T) {
 		t.Fatalf("result balance %s", rb)
 	}
 
-	// Second 80.00 bet: insufficient funds, rejected, no movement.
+	// Segunda aposta de 80.00: saldo insuficiente, rejeitada, sem movimento.
 	tx2 := newTx(t, rawReq(w, KindBet, "80.00"))
 	s2 := settle(t, tx2, w, ReferenceState{})
 	if tx2.Status() != StatusRejected || tx2.FailureCode() != FailureInsufficientFunds || s2.Entry != nil {
@@ -456,13 +456,13 @@ func TestRefund(t *testing.T) {
 	if refund.ReferenceTransactionID() != bet.ID() {
 		t.Fatal("reference not resolved")
 	}
-	// Second reversal of the same bet is refused.
+	// Segunda reversão da mesma aposta é recusada.
 	again := newTx(t, rawReq(w, KindRefund, "30.00", withRef(bet.ExternalTransactionID())))
 	settle(t, again, w, ReferenceState{Transaction: bet, AlreadyReversed: true})
 	if again.FailureCode() != FailureReferenceAlreadyReversed || w.Balance().Amount() != "100.00" {
 		t.Fatalf("double refund: %s %s", again.FailureCode(), w.Balance())
 	}
-	// ROLLBACK of the same bet (already refunded) is also refused.
+	// ROLLBACK da mesma aposta (já reembolsada) também é recusado.
 	rb := newTx(t, rawReq(w, KindRollback, "30.00", withRef(bet.ExternalTransactionID())))
 	settle(t, rb, w, ReferenceState{Transaction: bet, AlreadyReversed: true})
 	if rb.FailureCode() != FailureReferenceAlreadyReversed {
@@ -490,7 +490,7 @@ func TestReversalRules(t *testing.T) {
 			t.Errorf("%s: %s %s", c.name, tx.Status(), tx.FailureCode())
 		}
 	}
-	// REFUND of a WIN is not allowed.
+	// REFUND de um WIN não é permitido.
 	win := newTx(t, rawReq(w, KindWin, "5.00"))
 	settle(t, win, w, ReferenceState{})
 	refundWin := newTx(t, rawReq(w, KindRefund, "5.00", withRef(win.ExternalTransactionID())))
@@ -498,7 +498,7 @@ func TestReversalRules(t *testing.T) {
 	if refundWin.FailureCode() != FailureReferenceKindNotAllowed {
 		t.Fatalf("refund of win: %s", refundWin.FailureCode())
 	}
-	// Reference that ended REJECTED.
+	// Referência que terminou REJECTED.
 	rejected := newTx(t, rawReq(w, KindBet, "9999.00"))
 	settle(t, rejected, w, ReferenceState{})
 	rb := newTx(t, rawReq(w, KindRollback, "9999.00", withRef(rejected.ExternalTransactionID())))
@@ -526,7 +526,7 @@ func TestRollbackDirections(t *testing.T) {
 	if s.Entry.Direction() != DirectionDebit || w.Balance().Amount() != "100.00" {
 		t.Fatalf("rollback win: %s", w.Balance())
 	}
-	// ROLLBACK of a REFUND debits the refunded amount back.
+	// ROLLBACK de um REFUND debita o valor reembolsado de volta.
 	bet2 := processedBet(t, w, "10.00") // 90
 	refund := newTx(t, rawReq(w, KindRefund, "10.00", withRef(bet2.ExternalTransactionID())))
 	settle(t, refund, w, ReferenceState{Transaction: bet2}) // 100
@@ -535,7 +535,7 @@ func TestRollbackDirections(t *testing.T) {
 	if s.Entry.Direction() != DirectionDebit || w.Balance().Amount() != "90.00" {
 		t.Fatalf("rollback refund: %s", w.Balance())
 	}
-	// ROLLBACK of a ROLLBACK is not allowed.
+	// ROLLBACK de um ROLLBACK não é permitido.
 	rbrb := newTx(t, rawReq(w, KindRollback, "10.00", withRef(rbRefund.ExternalTransactionID())))
 	settle(t, rbrb, w, ReferenceState{Transaction: rbRefund})
 	if rbrb.FailureCode() != FailureReferenceKindNotAllowed {
@@ -547,7 +547,7 @@ func TestRollbackInsufficientFundsHasDistinctCode(t *testing.T) {
 	w := openWallet(t, "0.00")
 	win := newTx(t, rawReq(w, KindWin, "50.00"))
 	settle(t, win, w, ReferenceState{})
-	bet := processedBet(t, w, "45.00") // 5 left
+	bet := processedBet(t, w, "45.00") // restam 5
 	_ = bet
 	rb := newTx(t, rawReq(w, KindRollback, "50.00", withRef(win.ExternalTransactionID())))
 	s := settle(t, rb, w, ReferenceState{Transaction: win})
@@ -591,13 +591,13 @@ func TestPendingReferenceLifecycle(t *testing.T) {
 	if !refund.NextAttemptAt().Equal(t0.Add(time.Second)) {
 		t.Fatalf("next attempt %v", refund.NextAttemptAt())
 	}
-	// Retry: still missing -> rescheduled with doubled backoff, no new event.
+	// Retry: ainda ausente -> reagendado com backoff dobrado, sem novo evento.
 	ctx.Now = t0.Add(time.Second)
 	s, _ = Settle(refund, w, ReferenceState{}, ctx)
 	if refund.Status() != StatusPendingReference || len(s.Events) != 0 || !refund.NextAttemptAt().Equal(ctx.Now.Add(2*time.Second)) {
 		t.Fatalf("reschedule: %s events=%d next=%v", refund.Status(), len(s.Events), refund.NextAttemptAt())
 	}
-	// Third attempt exhausts the budget -> REJECTED REFERENCE_NOT_FOUND.
+	// Terceira tentativa esgota o orçamento -> REJECTED REFERENCE_NOT_FOUND.
 	ctx.Now = t0.Add(3 * time.Second)
 	s, _ = Settle(refund, w, ReferenceState{}, ctx)
 	if refund.Status() != StatusRejected || refund.FailureCode() != FailureReferenceNotFound {
