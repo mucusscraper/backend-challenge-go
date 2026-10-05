@@ -40,6 +40,7 @@ correto com várias instâncias em execução e com falhas entre as etapas de pr
 10. [Testes](#10-testes)
 11. [Observabilidade](#11-observabilidade)
 12. [Estrutura do projeto](#12-estrutura-do-projeto)
+13. [Métricas do projeto](#13-métricas-do-projeto)
 
 ## 1. Pré-requisitos
 
@@ -421,3 +422,146 @@ deploy                 realm Keycloak, init LocalStack, init papel PostgreSQL
 test/integration       suite de integração (build tag integration)
 test/e2e               suite multi-processo (build tag e2e)
 ```
+
+## 13. Métricas do projeto
+
+> Medições realizadas em `docker compose up --build` local (3 instâncias `app1–app3`,
+> PostgreSQL, Keycloak, LocalStack). Ambiente: Linux, Go 1.25, distroless container.
+
+### Latência HTTP por endpoint
+
+Medições sequenciais contra instâncias rodando em paralelo (round-robin entre `:8081–:8083`).
+
+| Endpoint | n | min | avg | p50 | p95 | p99 | max |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `GET /health/ready` | 50 | 3.9 ms | 8.1 ms | 7.0 ms | 14.1 ms | 35.6 ms | 35.6 ms |
+| `GET /wallets/{id}` | 100 | 2.0 ms | 2.5 ms | 2.4 ms | 3.5 ms | 6.0 ms | 6.0 ms |
+| `GET /wallets/{id}/ledger` | 100 | 2.8 ms | 3.4 ms | 3.3 ms | 4.6 ms | 5.8 ms | 5.8 ms |
+| `POST /wagering/transactions` (BET único) | 100 | 7.6 ms | 10.3 ms | 8.9 ms | 18.8 ms | 37.0 ms | 37.0 ms |
+| `POST /wagering/transactions` (replay idempotente) | 49 | 1.9 ms | 2.9 ms | 2.5 ms | 4.7 ms | 5.5 ms | 5.5 ms |
+
+> Replay idempotente é **3.5× mais rápido** que a primeira escrita: nenhum lock de linha,
+> nenhuma gravação, apenas leitura do registro de inbox/transação existente.
+
+### Throughput concorrente
+
+| Cenário | Concorrência | Wall time | Throughput | p50 | p95 |
+| --- | --- | --- | --- | --- | --- |
+| 50 BETs na **mesma carteira** (lock serializa) | 50 | 1.056 s | 47 req/s | 601 ms | 946 ms |
+| 50 BETs em **carteiras distintas** (sem contenção) | 50 | 289 ms | 173 req/s | 143 ms | 213 ms |
+
+> A alta latência no cenário de mesma carteira é comportamento correto: o `SELECT … FOR UPDATE`
+> serializa todas as 50 operações para garantir atomicidade financeira. Carteiras distintas escalam
+> linearmente — sem lock global.
+
+### Tempo de processamento interno (server-side, sem overhead de rede)
+
+Extraído do histograma `wagering_processing_duration_seconds` do Prometheus (cobre wallet lock +
+regras de domínio + escrita SQL atômica + enfileiramento do outbox):
+
+| n | avg | p50 |
+| --- | --- | --- |
+| 85 | ~122 ms | ≤ 16 ms |
+
+> O avg é puxado pelas transações que esperaram no lock de linha sob contenção.
+> O p50 de ≤ 16 ms reflete o caminho sem contenção.
+
+### Footprint de memória (idle vs. sob carga)
+
+| Container | Idle | Após carga (50 req concorrentes) |
+| --- | --- | --- |
+| `app1` | 16.3 MiB | 19.6 MiB |
+| `app2` | 17.7 MiB | 20.6 MiB |
+| `app3` | 10.7 MiB | 16.3 MiB |
+| `postgres` | 81.1 MiB | — |
+| `keycloak` | 604.5 MiB | — |
+| `localstack` | 167.2 MiB | — |
+
+> Cada instância do serviço consome **≤ 21 MiB** mesmo sob carga — resultado direto do
+> uso de `int64` para dinheiro (sem `decimal` pesado) e da ausência de cache em memória.
+
+### Artefatos binários
+
+| Artefato | Tamanho |
+| --- | --- |
+| Binário Go (`wallet-service`, `-trimpath -ldflags="-s -w"`) | **17 MB** |
+| Imagem Docker (distroless `nonroot`) | **46.6 MB** |
+| Tempo até primeiro `/health/ready` (cold start com infra real) | **~1.4 s** |
+
+### Saúde do outbox (ao final dos testes)
+
+| Métrica | Valor |
+| --- | --- |
+| `wagering_outbox_lag_seconds` | 0 s (relay em dia) |
+| `wagering_outbox_publish_failures_total` | 0 |
+| Eventos `WagerTransactionProcessed` publicados | 109 |
+| Eventos `WalletBalanceChanged` publicados | 109 |
+| `wagering_reconciliation_divergences_total` | 0 |
+
+### Código-fonte
+
+| Métrica | Valor |
+| --- | --- |
+| Arquivos `.go` | 44 (33 produção + 11 testes) |
+| Linhas de código total | ~9.800 |
+| Linhas de produção | ~6.900 |
+| Linhas de teste | ~2.900 |
+| Razão teste/produção | ~43 % |
+| Pacotes Go | 15 |
+| Versão mínima do Go | 1.25 |
+
+### Testes
+
+| Suite | Funções de teste | Infraestrutura necessária |
+| --- | --- | --- |
+| Unitária | 49 funções | nenhuma |
+| Integração | 19 funções | PostgreSQL + Keycloak + LocalStack |
+| End-to-end | 6 funções | stack completo (3 instâncias) |
+| **Total** | **74** | — |
+
+Há ainda 1 função de fuzz (`FuzzParse`) para o parser de `Money`. Todas as suites
+rodam com `-race` e todas as 74 funções passam sem falhas.
+
+### Modelo de domínio
+
+| Aspecto | Detalhes |
+| --- | --- |
+| Tipos de operação (`Kind`) | `BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK` |
+| Status de transação | `PENDING`, `PENDING_REFERENCE`, `PROCESSED`, `REJECTED`, `FAILED` |
+| Códigos de falha de negócio | 11 (`INSUFFICIENT_FUNDS`, `CURRENCY_MISMATCH`, `REFERENCE_NOT_FOUND`, …) |
+| Moedas suportadas | 14 (`BRL`, `USD`, `EUR`, `GBP`, `ARS`, `MXN`, `CAD`, `AUD`, `CHF`, `CNY`, `COP`, `PEN`, …) |
+| Representação de dinheiro | `int64` (centavos); escala fixa 2; sem ponto flutuante |
+| Structs de domínio | 28 |
+| Interfaces (ports) | 10 (`UnitOfWork`, `WalletRepository`, `TransactionRepository`, `LedgerRepository`, `OutboxRepository`, `InboxRepository`, `OutboxStore`, `EventPublisher`, …) |
+
+### API e infraestrutura
+
+| Aspecto | Valor |
+| --- | --- |
+| Endpoints HTTP | 11 |
+| Instâncias em execução (Compose) | 3 |
+| Filas SQS | 3 (`wager-transactions.fifo`, `wager-transactions-dlq.fifo`, `wallet-events.fifo`) |
+| Tabelas PostgreSQL | 5 (`wallets`, `wager_transactions`, `wallet_ledger_entries`, `inbox_messages`, `outbox_events`) |
+| Versões de migração | 2 |
+| Constraints/índices de banco | 18 |
+| Queries SQL | ~24 (em `internal/postgres`) |
+
+### Observabilidade
+
+| Tipo | Contagem |
+| --- | --- |
+| Métricas Prometheus expostas | 11 |
+| Campos de contexto nos logs JSON | 6 (`instance`, `correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`) |
+| Endpoints de health | 2 (`/health/live`, `/health/ready`) |
+
+### Dependências diretas
+
+| Biblioteca | Finalidade |
+| --- | --- |
+| `go.uber.org/fx` | injeção de dependências e ciclo de vida |
+| `github.com/jackc/pgx/v5` | driver PostgreSQL |
+| `github.com/aws/aws-sdk-go-v2` | cliente SQS |
+| `github.com/coreos/go-oidc/v3` | validação de tokens OIDC/JWT (Keycloak) |
+| `github.com/prometheus/client_golang` | métricas Prometheus |
+| `github.com/pressly/goose/v3` | migrações SQL versionadas |
+| `github.com/google/uuid` | geração de UUIDs |
